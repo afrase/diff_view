@@ -587,6 +587,26 @@ class RenderDiffPane extends RenderBox
       }
       canvas.drawParagraph(layout.paragraph, Offset(textX, y + res.textTop));
     }
+    // Insertions and deletions have no lines on this side: a line across
+    // the pane marks where the other side's lines go, and meets the ribbon.
+    final blocks = _document.blocks;
+    for (
+      var i = _document.firstBlockEndingAfter(_side, first);
+      i < blocks.length;
+      i++
+    ) {
+      final span = blocks[i].span(_side);
+      if (span.start > last + 1) break;
+      if (!span.isEmpty) continue;
+      final y = offset.dy + _geometry.topOfSlot(span.start) - pixels;
+      canvas.drawRect(
+        Rect.fromLTWH(codeLeft, y - 0.5, size.width - g.gutterWidth, 1),
+        tintPaint
+          ..color = blocks[i].kind == BlockKind.inserted
+              ? theme.ribbonInserted
+              : theme.ribbonDeleted,
+      );
+    }
     canvas
       ..restore()
       // Pass 2: gutter.
