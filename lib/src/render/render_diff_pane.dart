@@ -1,14 +1,14 @@
 import 'dart:math' as math;
 
+import 'package:diff_view/src/model/diff_document.dart';
+import 'package:diff_view/src/model/diff_line.dart';
+import 'package:diff_view/src/model/line_coords.dart';
+import 'package:diff_view/src/model/line_source.dart';
+import 'package:diff_view/src/model/pane_geometry.dart';
+import 'package:diff_view/src/render/paint_resources.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/widgets.dart';
-import 'package:side_by_side_diff/src/model/diff_document.dart';
-import 'package:side_by_side_diff/src/model/diff_line.dart';
-import 'package:side_by_side_diff/src/model/line_coords.dart';
-import 'package:side_by_side_diff/src/model/line_source.dart';
-import 'package:side_by_side_diff/src/model/pane_geometry.dart';
-import 'package:side_by_side_diff/src/render/paint_resources.dart';
 
 /// Called after a pane painted, with its scroll offset (tests and probes).
 typedef PanePaintObserver = void Function(PaneSide side, double pixels);

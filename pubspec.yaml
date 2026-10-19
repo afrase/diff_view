@@ -1,7 +1,7 @@
-name: side_by_side_diff
+name: diff_view
 description: A fast side-by-side diff view for Flutter, like JetBrains IDEs' diff viewer, with curved ribbons, synced scrolling, word highlights, folding and line selection.
 version: 0.1.0
-repository: https://github.com/afrase/side_by_side_diff
+repository: https://github.com/afrase/diff_view
 topics: [diff, code, viewer, widget, desktop]
 
 environment:

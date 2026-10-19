@@ -1,6 +1,6 @@
 import 'dart:typed_data';
 
-import 'package:side_by_side_diff/src/model/line_coords.dart';
+import 'package:diff_view/src/model/line_coords.dart';
 
 /// Vertical geometry of one pane as a Fenwick tree over slots.
 ///

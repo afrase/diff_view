@@ -1,11 +1,11 @@
 import 'dart:typed_data';
 
+import 'package:diff_view/src/diff/myers.dart';
+import 'package:diff_view/src/model/diff_document.dart';
+import 'package:diff_view/src/model/diff_line.dart';
+import 'package:diff_view/src/model/line_coords.dart';
+import 'package:diff_view/src/model/line_source.dart';
 import 'package:meta/meta.dart';
-import 'package:side_by_side_diff/src/diff/myers.dart';
-import 'package:side_by_side_diff/src/model/diff_document.dart';
-import 'package:side_by_side_diff/src/model/diff_line.dart';
-import 'package:side_by_side_diff/src/model/line_coords.dart';
-import 'package:side_by_side_diff/src/model/line_source.dart';
 
 /// Returns syntax spans for one line: `(start, length, captureId)` triples
 /// in UTF-16 code units, sorted and non-overlapping, where `captureId`

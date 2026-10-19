@@ -1,5 +1,5 @@
+import 'package:diff_view/src/model/line_coords.dart';
 import 'package:meta/meta.dart';
-import 'package:side_by_side_diff/src/model/line_coords.dart';
 
 /// An inline widget between rows of one pane: a comment thread or
 /// a composer. The painter places it below [afterLine]; what it shows is up

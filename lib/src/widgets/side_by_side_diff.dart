@@ -1,9 +1,9 @@
+import 'package:diff_view/src/model/line_coords.dart';
+import 'package:diff_view/src/render/diff_theme.dart';
+import 'package:diff_view/src/render/ribbon_painter.dart';
+import 'package:diff_view/src/widgets/diff_pane.dart';
+import 'package:diff_view/src/widgets/diff_view_controller.dart';
 import 'package:flutter/widgets.dart';
-import 'package:side_by_side_diff/src/model/line_coords.dart';
-import 'package:side_by_side_diff/src/render/diff_theme.dart';
-import 'package:side_by_side_diff/src/render/ribbon_painter.dart';
-import 'package:side_by_side_diff/src/widgets/diff_pane.dart';
-import 'package:side_by_side_diff/src/widgets/diff_view_controller.dart';
 
 /// Side-by-side diff: the old pane, the ribbon divider and the new
 /// pane, scrolled together through the controller's sync map.

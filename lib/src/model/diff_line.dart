@@ -1,7 +1,7 @@
 import 'dart:typed_data';
 
+import 'package:diff_view/src/model/line_coords.dart';
 import 'package:meta/meta.dart';
-import 'package:side_by_side_diff/src/model/line_coords.dart';
 
 /// How a line relates to the other side.
 enum LineKind {

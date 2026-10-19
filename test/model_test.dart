@@ -1,7 +1,7 @@
 import 'dart:math';
 
+import 'package:diff_view/diff_view.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:side_by_side_diff/side_by_side_diff.dart';
 
 import 'support.dart';
 

@@ -1,5 +1,5 @@
-name: side_by_side_diff_example
-description: Example app for side_by_side_diff.
+name: diff_view_example
+description: Example app for diff_view.
 publish_to: none
 version: 1.0.0
 
@@ -9,7 +9,7 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  side_by_side_diff:
+  diff_view:
     path: ..
 
 dev_dependencies:

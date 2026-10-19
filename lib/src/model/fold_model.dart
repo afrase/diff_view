@@ -1,5 +1,5 @@
-import 'package:side_by_side_diff/src/model/diff_document.dart';
-import 'package:side_by_side_diff/src/model/line_coords.dart';
+import 'package:diff_view/src/model/diff_document.dart';
+import 'package:diff_view/src/model/line_coords.dart';
 
 /// The hidden spans of one fold level. A side's span is null when
 /// that side keeps fewer than two lines hidden at this level.

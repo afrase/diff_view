@@ -1,6 +1,6 @@
+import 'package:diff_view/src/model/diff_line.dart';
+import 'package:diff_view/src/model/line_coords.dart';
 import 'package:meta/meta.dart';
-import 'package:side_by_side_diff/src/model/diff_line.dart';
-import 'package:side_by_side_diff/src/model/line_coords.dart';
 
 /// A range of whole lines on one side: where the gutter drag
 /// started ([anchor]) and where it is now ([focus]), both model lines.

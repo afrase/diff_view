@@ -1,18 +1,18 @@
 import 'dart:async';
 
+import 'package:diff_view/src/model/diff_document.dart';
+import 'package:diff_view/src/model/fold_model.dart';
+import 'package:diff_view/src/model/inlays.dart';
+import 'package:diff_view/src/model/line_coords.dart';
+import 'package:diff_view/src/model/line_source.dart';
+import 'package:diff_view/src/model/pane_geometry.dart';
+import 'package:diff_view/src/model/selection.dart';
+import 'package:diff_view/src/model/sync_map.dart';
+import 'package:diff_view/src/render/diff_theme.dart';
+import 'package:diff_view/src/render/paint_resources.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
-import 'package:side_by_side_diff/src/model/diff_document.dart';
-import 'package:side_by_side_diff/src/model/fold_model.dart';
-import 'package:side_by_side_diff/src/model/inlays.dart';
-import 'package:side_by_side_diff/src/model/line_coords.dart';
-import 'package:side_by_side_diff/src/model/line_source.dart';
-import 'package:side_by_side_diff/src/model/pane_geometry.dart';
-import 'package:side_by_side_diff/src/model/selection.dart';
-import 'package:side_by_side_diff/src/model/sync_map.dart';
-import 'package:side_by_side_diff/src/render/diff_theme.dart';
-import 'package:side_by_side_diff/src/render/paint_resources.dart';
 
 /// Called after a pane painted its selection overlay (tests and probes).
 typedef SelectionPaintObserver = void Function(

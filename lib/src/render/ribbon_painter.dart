@@ -1,10 +1,10 @@
 import 'dart:math' as math;
 
+import 'package:diff_view/src/model/diff_document.dart';
+import 'package:diff_view/src/model/line_coords.dart';
+import 'package:diff_view/src/model/pane_geometry.dart';
+import 'package:diff_view/src/render/diff_theme.dart';
 import 'package:flutter/rendering.dart';
-import 'package:side_by_side_diff/src/model/diff_document.dart';
-import 'package:side_by_side_diff/src/model/line_coords.dart';
-import 'package:side_by_side_diff/src/model/pane_geometry.dart';
-import 'package:side_by_side_diff/src/render/diff_theme.dart';
 
 /// The y extent of one block on one pane, in viewport coordinates.
 typedef RibbonEdge = ({double top, double bottom});

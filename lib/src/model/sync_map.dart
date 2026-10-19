@@ -1,9 +1,9 @@
 import 'dart:math' as math;
 import 'dart:typed_data';
 
-import 'package:side_by_side_diff/src/model/diff_document.dart';
-import 'package:side_by_side_diff/src/model/line_coords.dart';
-import 'package:side_by_side_diff/src/model/pane_geometry.dart';
+import 'package:diff_view/src/model/diff_document.dart';
+import 'package:diff_view/src/model/line_coords.dart';
+import 'package:diff_view/src/model/pane_geometry.dart';
 
 /// Monotone piecewise-linear map between the two panes' content ys
 ///.

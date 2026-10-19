@@ -1,4 +1,4 @@
-# side_by_side_diff
+# diff_view
 
 A fast side-by-side diff view for Flutter, modelled on the JetBrains IDEs' diff viewer.
 
@@ -17,7 +17,7 @@ It depends only on Flutter. Desktop is the main target; it works wherever Flutte
 ## Usage
 
 ```dart
-import 'package:side_by_side_diff/side_by_side_diff.dart';
+import 'package:diff_view/diff_view.dart';
 
 final diff = TextDiff.compute(oldText, newText, path: 'main.dart');
 

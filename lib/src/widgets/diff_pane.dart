@@ -1,15 +1,15 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:diff_view/src/model/inlays.dart';
+import 'package:diff_view/src/model/line_coords.dart';
+import 'package:diff_view/src/model/pane_geometry.dart';
+import 'package:diff_view/src/render/render_diff_pane.dart';
+import 'package:diff_view/src/widgets/diff_view_controller.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
-import 'package:side_by_side_diff/src/model/inlays.dart';
-import 'package:side_by_side_diff/src/model/line_coords.dart';
-import 'package:side_by_side_diff/src/model/pane_geometry.dart';
-import 'package:side_by_side_diff/src/render/render_diff_pane.dart';
-import 'package:side_by_side_diff/src/widgets/diff_view_controller.dart';
 
 /// Builds the widget of an inlay.
 typedef InlayBuilder = Widget Function(BuildContext context, InlaySpec spec);

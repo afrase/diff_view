@@ -1,11 +1,11 @@
 import 'dart:collection';
 import 'dart:ui' as ui;
 
+import 'package:diff_view/src/model/diff_line.dart';
+import 'package:diff_view/src/render/diff_theme.dart';
+import 'package:diff_view/src/render/line_layout.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/painting.dart';
-import 'package:side_by_side_diff/src/model/diff_line.dart';
-import 'package:side_by_side_diff/src/render/diff_theme.dart';
-import 'package:side_by_side_diff/src/render/line_layout.dart';
 
 /// Horizontal layout of a pane: gutter (line numbers, change marker) then
 /// code.

@@ -1,7 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
-import 'package:side_by_side_diff/side_by_side_diff.dart';
+import 'package:diff_view/diff_view.dart';
 
 void main() => runApp(const ExampleApp());
 

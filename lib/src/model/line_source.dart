@@ -1,7 +1,7 @@
 import 'dart:async';
 
-import 'package:side_by_side_diff/src/model/diff_line.dart';
-import 'package:side_by_side_diff/src/model/line_coords.dart';
+import 'package:diff_view/src/model/diff_line.dart';
+import 'package:diff_view/src/model/line_coords.dart';
 
 /// Where the painter gets rows. Implementations page lines in from a
 /// backend or hold them in memory (tests, small files).

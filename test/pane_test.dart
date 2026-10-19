@@ -1,9 +1,9 @@
 import 'dart:ui';
 
+import 'package:diff_view/diff_view.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:side_by_side_diff/side_by_side_diff.dart';
 
 import 'support.dart';
 

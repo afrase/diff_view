@@ -1,5 +1,5 @@
-import 'package:side_by_side_diff/src/model/height_index.dart';
-import 'package:side_by_side_diff/src/model/line_coords.dart';
+import 'package:diff_view/src/model/height_index.dart';
+import 'package:diff_view/src/model/line_coords.dart';
 
 /// Which part of a slot an anchor holds still.
 enum AnchorPart {

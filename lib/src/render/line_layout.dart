@@ -2,8 +2,8 @@ import 'dart:collection';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
-import 'package:side_by_side_diff/src/model/diff_line.dart';
-import 'package:side_by_side_diff/src/render/diff_theme.dart';
+import 'package:diff_view/src/model/diff_line.dart';
+import 'package:diff_view/src/render/diff_theme.dart';
 
 /// A code line laid out for painting.
 final class LineLayout {
