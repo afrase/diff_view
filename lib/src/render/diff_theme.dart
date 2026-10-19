@@ -40,7 +40,6 @@ final class DiffThemeData {
     required this.ribbonInserted,
     required this.ribbonDeleted,
     required this.ribbonModified,
-    required this.ribbonBorder,
     required this.dividerBackground,
     required this.selection,
     required this.selectionOverCap,
@@ -49,6 +48,7 @@ final class DiffThemeData {
     required this.loadingBar,
     required this.hoverAffordance,
     required this.syntax,
+    this.ribbonBorder,
     this.fontFamily = 'JetBrains Mono',
     this.fontFamilyFallback = const ['Menlo', 'monospace'],
     this.fontSize = 13,
@@ -76,7 +76,6 @@ final class DiffThemeData {
     ribbonInserted: Color(0xFFD2EFD2),
     ribbonDeleted: Color(0xFFE2E2E2),
     ribbonModified: Color(0xFFD6E3FA),
-    ribbonBorder: Color(0xFFB4C4DE),
     dividerBackground: Color(0xFFF7F8FA),
     selection: Color(0x553D7EFF),
     selectionOverCap: Color(0x55E8A33D),
@@ -115,7 +114,6 @@ final class DiffThemeData {
     ribbonInserted: Color(0xFF2E4632),
     ribbonDeleted: Color(0xFF3C3F45),
     ribbonModified: Color(0xFF2C3B57),
-    ribbonBorder: Color(0xFF45567A),
     dividerBackground: Color(0xFF1E1F22),
     selection: Color(0x663D7EFF),
     selectionOverCap: Color(0x66E8A33D),
@@ -182,8 +180,9 @@ final class DiffThemeData {
   /// Ribbon fill of modified blocks.
   final Color ribbonModified;
 
-  /// Ribbon edge curves.
-  final Color ribbonBorder;
+  /// Ribbon edge curves; null (the default) draws the ribbons without
+  /// an outline.
+  final Color? ribbonBorder;
 
   /// Divider background.
   final Color dividerBackground;

@@ -117,7 +117,8 @@ class RibbonPainter extends CustomPainter {
       document.firstBlockEndingAfter(PaneSide.neu, firstNew),
     );
     final fill = _fill;
-    final border = _border..color = theme.ribbonBorder;
+    final borderColor = theme.ribbonBorder;
+    final border = borderColor == null ? null : (_border..color = borderColor);
     canvas
       ..save()
       ..clipRect(Offset.zero & size);
@@ -134,10 +135,12 @@ class RibbonPainter extends CustomPainter {
         BlockKind.deleted => theme.ribbonDeleted,
       };
       final w = size.width;
-      canvas
-        ..drawPath(_bandInto(_bandPath, l, r, w), fill)
-        ..drawPath(_edgeInto(_topPath, l.top, r.top, w), border)
-        ..drawPath(_edgeInto(_bottomPath, l.bottom, r.bottom, w), border);
+      canvas.drawPath(_bandInto(_bandPath, l, r, w), fill);
+      if (border != null) {
+        canvas
+          ..drawPath(_edgeInto(_topPath, l.top, r.top, w), border)
+          ..drawPath(_edgeInto(_bottomPath, l.bottom, r.bottom, w), border);
+      }
     }
     canvas.restore();
   }

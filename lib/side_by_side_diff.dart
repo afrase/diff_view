@@ -8,7 +8,8 @@
 /// memory: [MemoryLineSource]). [TextDiff] computes a diff of two texts.
 library;
 
-import 'package:side_by_side_diff/side_by_side_diff.dart' show DiffLineSource, MemoryLineSource, TextDiff;
+import 'package:side_by_side_diff/side_by_side_diff.dart'
+    show DiffLineSource, MemoryLineSource, TextDiff;
 
 export 'src/diff/myers.dart' show EditOp, myersDiff;
 export 'src/diff/text_diff.dart';
