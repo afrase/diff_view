@@ -587,26 +587,6 @@ class RenderDiffPane extends RenderBox
       }
       canvas.drawParagraph(layout.paragraph, Offset(textX, y + res.textTop));
     }
-    // Insertions and deletions have no lines on this side: a line across
-    // the pane marks where the other side's lines go, and meets the ribbon.
-    final blocks = _document.blocks;
-    for (
-      var i = _document.firstBlockEndingAfter(_side, first);
-      i < blocks.length;
-      i++
-    ) {
-      final span = blocks[i].span(_side);
-      if (span.start > last + 1) break;
-      if (!span.isEmpty) continue;
-      final y = offset.dy + _geometry.topOfSlot(span.start) - pixels;
-      canvas.drawRect(
-        Rect.fromLTWH(codeLeft, y - 1, size.width - g.gutterWidth, 2),
-        tintPaint
-          ..color = blocks[i].kind == BlockKind.inserted
-              ? theme.ribbonInserted
-              : theme.ribbonDeleted,
-      );
-    }
     canvas
       ..restore()
       // Pass 2: gutter.
@@ -623,13 +603,9 @@ class RenderDiffPane extends RenderBox
       final kind = _lines.lineAt(_side, r)?.kind ?? _kindFromDocument(r);
       final changed = kind != LineKind.unchanged;
       if (changed) {
+        // The line's tint runs through the gutter, as in JetBrains IDEs.
         canvas.drawRect(
-          Rect.fromLTWH(
-            offset.dx + g.markerX - 2,
-            y,
-            res.advance + 4,
-            lineHeight,
-          ),
+          Rect.fromLTWH(offset.dx, y, g.gutterWidth, lineHeight),
           tintPaint..color = _lineTint(kind)!,
         );
         final glyph = res.marker(kind);
@@ -648,6 +624,26 @@ class RenderDiffPane extends RenderBox
       );
     }
 
+    // Insertions and deletions have no lines on this side: a line across
+    // the pane marks where the other side's lines go, and meets the ribbon.
+    final blocks = _document.blocks;
+    for (
+      var i = _document.firstBlockEndingAfter(_side, first);
+      i < blocks.length;
+      i++
+    ) {
+      final span = blocks[i].span(_side);
+      if (span.start > last + 1) break;
+      if (!span.isEmpty) continue;
+      final y = offset.dy + _geometry.topOfSlot(span.start) - pixels;
+      canvas.drawRect(
+        Rect.fromLTWH(offset.dx, y - 1, size.width, 2),
+        tintPaint
+          ..color = blocks[i].kind == BlockKind.inserted
+              ? theme.ribbonInserted
+              : theme.ribbonDeleted,
+      );
+    }
     // Fold placeholders.
     final spans = _geometry.hiddenSpans;
     for (var i = _firstSpanFrom(spans, first); i < spans.length; i++) {
