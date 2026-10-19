@@ -17,3 +17,7 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   very_good_analysis: ^11.0.0
+
+screenshots:
+  - description: Side-by-side diff with ribbons, word highlights and a folded unchanged region.
+    path: doc/screenshot.png

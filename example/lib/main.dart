@@ -41,6 +41,28 @@ class Counter {
   void reset() {
     value = 0;
   }
+
+  bool get isZero => value == 0;
+
+  bool get isEven => value % 2 == 0;
+
+  int doubled() {
+    return value * 2;
+  }
+
+  int squared() {
+    return value * value;
+  }
+
+  String describe() {
+    if (isZero) {
+      return 'zero';
+    }
+    return isEven ? 'even' : 'odd';
+  }
+
+  @override
+  String toString() => 'Counter($value)';
 }
 
 void main() {
@@ -69,6 +91,28 @@ class Counter {
   void reset() {
     value = 0;
   }
+
+  bool get isZero => value == 0;
+
+  bool get isEven => value % 2 == 0;
+
+  int doubled() {
+    return value * 2;
+  }
+
+  int squared() {
+    return value * value;
+  }
+
+  String describe() {
+    if (isZero) {
+      return 'zero';
+    }
+    return isEven ? 'even' : 'odd';
+  }
+
+  @override
+  String toString() => 'Counter($value)';
 }
 
 void main() {

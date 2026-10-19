@@ -2,6 +2,8 @@
 
 A fast side-by-side diff view for Flutter, modelled on the JetBrains IDEs' diff viewer.
 
+![The example app: a side-by-side diff with ribbons, word highlights and a folded region](doc/screenshot.png)
+
 - Two synced panes with curved ribbons linking each change across the divider.
 - Word-level highlights inside changed lines, plus your own syntax colors.
 - Nested folding of unchanged regions ("… N unchanged lines").
