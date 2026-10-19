@@ -1,0 +1,29 @@
+name: side_by_side_diff_example
+description: Example app for side_by_side_diff.
+publish_to: none
+version: 1.0.0
+
+environment:
+  sdk: ^3.13.5
+
+dependencies:
+  flutter:
+    sdk: flutter
+  side_by_side_diff:
+    path: ..
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+flutter:
+  uses-material-design: true
+  fonts:
+    # JetBrains Mono (SIL OFL 1.1, assets/fonts/OFL.txt).
+    - family: JetBrains Mono
+      fonts:
+        - asset: assets/fonts/JetBrainsMono-Regular.ttf
+        - asset: assets/fonts/JetBrainsMono-Bold.ttf
+          weight: 700
+        - asset: assets/fonts/JetBrainsMono-Italic.ttf
+          style: italic
