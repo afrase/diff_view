@@ -600,7 +600,7 @@ class RenderDiffPane extends RenderBox
       if (!span.isEmpty) continue;
       final y = offset.dy + _geometry.topOfSlot(span.start) - pixels;
       canvas.drawRect(
-        Rect.fromLTWH(codeLeft, y - 0.5, size.width - g.gutterWidth, 1),
+        Rect.fromLTWH(codeLeft, y - 1, size.width - g.gutterWidth, 2),
         tintPaint
           ..color = blocks[i].kind == BlockKind.inserted
               ? theme.ribbonInserted

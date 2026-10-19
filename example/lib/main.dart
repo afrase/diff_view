@@ -38,6 +38,7 @@ class Counter {
     value = value + 1;
   }
 
+  // Adds one; see reset() to start over.
   void reset() {
     value = 0;
   }

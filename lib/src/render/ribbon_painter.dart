@@ -44,7 +44,7 @@ class RibbonPainter extends CustomPainter {
   final DiffThemeData theme;
 
   /// The extent of [block] on [side]'s pane scrolled to [pixels]. An empty
-  /// side becomes a 1 px line at the boundary where the other side's lines
+  /// side becomes a 2 px line at the boundary where the other side's lines
   /// would go.
   static RibbonEdge edge(
     DiffBlock block,
@@ -55,7 +55,7 @@ class RibbonPainter extends CustomPainter {
     final span = block.span(side);
     if (span.isEmpty) {
       final y = g.topOfSlot(span.start) - pixels;
-      return (top: y - 0.5, bottom: y + 0.5);
+      return (top: y - 1, bottom: y + 1);
     }
     return (
       top: g.topOfRow(span.start) - pixels,
