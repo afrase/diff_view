@@ -1,7 +1,8 @@
-/// A side-by-side diff view of one file, like JetBrains IDEs': self-painted
-/// rows with cached paragraphs, curved ribbons between two
-/// synced panes, word and syntax highlights, nested folds, inline inlays
-/// with scroll anchoring, and gutter line selection with copy.
+/// A side-by-side or unified diff view of one file, like JetBrains IDEs':
+/// self-painted rows with cached paragraphs, curved ribbons between two
+/// synced panes (or one column with both line numbers), word and syntax
+/// highlights, nested folds, inline inlays with scroll anchoring, and
+/// gutter line selection with copy.
 ///
 /// Self-contained: it depends on Flutter only. Rows come from a
 /// [DiffLineSource] the host implements (paged from a backend, or in
@@ -23,6 +24,7 @@ export 'src/model/line_source.dart';
 export 'src/model/pane_geometry.dart';
 export 'src/model/selection.dart';
 export 'src/model/sync_map.dart';
+export 'src/model/unified_rows.dart';
 export 'src/render/diff_theme.dart';
 export 'src/render/line_layout.dart';
 export 'src/render/paint_resources.dart';
@@ -31,3 +33,4 @@ export 'src/render/ribbon_painter.dart';
 export 'src/widgets/diff_pane.dart';
 export 'src/widgets/diff_view_controller.dart';
 export 'src/widgets/side_by_side_diff.dart';
+export 'src/widgets/unified_diff.dart';

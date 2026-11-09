@@ -1,10 +1,11 @@
 # diff_view
 
-A fast side-by-side diff view for Flutter, modelled on the JetBrains IDEs' diff viewer.
+A fast side-by-side and unified diff view for Flutter, modelled on the JetBrains IDEs' diff viewer.
 
 ![The example app: a side-by-side diff with ribbons, word highlights and a folded region](doc/screenshot.png)
 
 - Two synced panes with curved ribbons linking each change across the divider.
+- A unified (single-column) view of the same controller, for when one column reads better, such as a new file.
 - Word-level highlights inside changed lines, plus your own syntax colors.
 - Nested folding of unchanged regions ("… N unchanged lines").
 - Line selection in the gutter (drag, Shift-click, Shift+arrows) with copy.
@@ -38,6 +39,24 @@ SideBySideDiff(
 
 Dispose the controller when the view closes. See [`example/`](example/) for a complete app.
 
+## Unified view
+
+`UnifiedDiff` shows the same controller in one column, like GitHub's or JetBrains' unified viewer:
+
+```dart
+UnifiedDiff(
+  controller: controller,
+  theme: theme,
+  inlayBuilder: (context, spec) => const SizedBox.shrink(),
+);
+```
+
+- The gutter has the old and new line numbers and a `+` or `−` marker. Unchanged lines appear once; each change shows its deleted lines, then its inserted lines, with word highlights. An added file is all `+` rows.
+- Folds, inlays, the theme and the paragraph cache are shared with `SideBySideDiff`, so you can switch between the two without rebuilding anything. The new view opens at the line the old one showed.
+- An inlay of either side is drawn below the row of its line.
+- `jumpToLine`, `viewportYOfLine` and `ensureLineVisible` act on whichever view is laid out.
+- The gutter selection is `controller.unifiedSelection`, in rows. `controller.unifiedRows.linesIn(span)` gives the old and new lines it covers, and copy takes the shown text without markers.
+
 ## Syntax highlighting
 
 Pass `syntax:` to `TextDiff.compute`. It returns `(start, length, captureId)` triples for each line, where `captureId` indexes the `captureNames` you give the controller (for example `['', 'keyword', 'string']`). `DiffThemeData.syntax` maps capture names to colors, and a dotted name such as `keyword.control` falls back to `keyword`. Any tokenizer works; the example uses a small regex.
@@ -52,7 +71,6 @@ The default theme asks for `JetBrains Mono` and falls back to Menlo and the plat
 
 ## Limits
 
-- Side by side only; there's no unified (single-column) mode yet.
 - No screen-reader semantics for rows yet.
 - `TextDiff` keeps memory proportional to the number of differences times the file length, so a large file that's completely rewritten is slow to diff.
 

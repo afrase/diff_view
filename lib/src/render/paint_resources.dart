@@ -17,12 +17,45 @@ final class GutterMetrics {
     final numberRight = pad + digits * advance;
     final markerX = numberRight + 6;
     final gutterWidth = markerX + advance + 6;
-    return GutterMetrics._(numberRight, markerX, gutterWidth, gutterWidth + 6);
+    return GutterMetrics._(
+      numberRight,
+      numberRight,
+      markerX,
+      gutterWidth,
+      gutterWidth + 6,
+    );
   }
 
-  const new _(this.numberRight, this.markerX, this.gutterWidth, this.codeX);
+  /// The metrics of a unified gutter: old and new line numbers of up to
+  /// [digits] digits, then the change marker.
+  factory unified({required int digits, required double advance}) {
+    const pad = 8.0;
+    final oldNumberRight = pad + digits * advance;
+    final numberRight = oldNumberRight + pad + digits * advance;
+    final markerX = numberRight + 6;
+    final gutterWidth = markerX + advance + 6;
+    return GutterMetrics._(
+      oldNumberRight,
+      numberRight,
+      markerX,
+      gutterWidth,
+      gutterWidth + 6,
+    );
+  }
 
-  /// Right edge of the line numbers.
+  const new _(
+    this.oldNumberRight,
+    this.numberRight,
+    this.markerX,
+    this.gutterWidth,
+    this.codeX,
+  );
+
+  /// Right edge of the old line numbers in a unified gutter. A pane's
+  /// gutter has one column of numbers, so there it is [numberRight].
+  final double oldNumberRight;
+
+  /// Right edge of the line numbers (the new ones in a unified gutter).
   final double numberRight;
 
   /// Left edge of the change marker / '+' affordance column.
@@ -83,6 +116,12 @@ final class DiffPaintResources {
 
   /// Horizontal layout of the panes.
   late final GutterMetrics gutter = GutterMetrics(
+    digits: _digits,
+    advance: layouts.advance,
+  );
+
+  /// Horizontal layout of the unified view.
+  late final GutterMetrics unifiedGutter = GutterMetrics.unified(
     digits: _digits,
     advance: layouts.advance,
   );

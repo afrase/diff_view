@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:diff_view/src/model/diff_document.dart';
+import 'package:diff_view/src/model/diff_line.dart';
 import 'package:diff_view/src/model/fold_model.dart';
 import 'package:diff_view/src/model/inlays.dart';
 import 'package:diff_view/src/model/line_coords.dart';
@@ -8,11 +9,13 @@ import 'package:diff_view/src/model/line_source.dart';
 import 'package:diff_view/src/model/pane_geometry.dart';
 import 'package:diff_view/src/model/selection.dart';
 import 'package:diff_view/src/model/sync_map.dart';
+import 'package:diff_view/src/model/unified_rows.dart';
 import 'package:diff_view/src/render/diff_theme.dart';
 import 'package:diff_view/src/render/paint_resources.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
+import 'package:meta/meta.dart';
 
 /// Called after a pane painted its selection overlay (tests and probes).
 typedef SelectionPaintObserver = void Function(
@@ -27,6 +30,13 @@ final class _Signal extends ChangeNotifier {
 /// State of one open side-by-side file view : folds,
 /// both panes' geometry and scroll controllers, the sync coupling, inlays
 /// and the line selection.
+///
+/// A unified view of the same file (`UnifiedDiff`) shares the folds,
+/// inlays, theme and caches, and has its own rows, geometry, scroll
+/// controller and selection. The scroll methods ([jumpToLine],
+/// [viewportYOfLine], [ensureLineVisible]) act on the side-by-side panes
+/// when they are laid out, else on the unified view. When one view
+/// replaces the other, the new one opens at the line the old one showed.
 ///
 /// Create one per open file and dispose it when the file closes.
 class DiffViewController extends ChangeNotifier {
@@ -63,7 +73,9 @@ class DiffViewController extends ChangeNotifier {
     for (final side in PaneSide.values) {
       _scrolls[side.index].addListener(() => _onScroll(side));
     }
+    _unifiedScroll.addListener(reclampHorizontal);
     selection.addListener(_selectionSignal.fire);
+    unifiedSelection.addListener(_selectionSignal.fire);
   }
 
   /// The file's header.
@@ -84,13 +96,16 @@ class DiffViewController extends ChangeNotifier {
   /// The gutter line selection.
   final LineSelectionController selection = LineSelectionController();
 
+  /// The gutter row selection of the unified view.
+  final RowSelectionController unifiedSelection = RowSelectionController();
+
   /// Horizontal code offset, shared by both panes.
   final ValueNotifier<double> horizontal = ValueNotifier(0);
 
   /// Whether the panes scroll together (setting `diff.sync_scroll`).
   bool syncEnabled = true;
 
-  /// Paint probe for panes.
+  /// Paint probe for panes. A unified view reports [PaneSide.neu].
   void Function(PaneSide side, double pixels)? onPanePaint;
 
   /// Paint probe for selection overlays.
@@ -102,6 +117,13 @@ class DiffViewController extends ChangeNotifier {
     ScrollController(debugLabel: 'diff.old'),
     ScrollController(debugLabel: 'diff.new'),
   ];
+  final ScrollController _unifiedScroll = ScrollController(
+    debugLabel: 'diff.unified',
+  );
+  UnifiedRows? _unifiedRows;
+  PaneGeometry? _unifiedGeometry;
+  // Fold region of each unified hidden span, by its first row.
+  Map<int, int> _unifiedFoldRegions = const {};
   final _Signal _geometrySignal = _Signal();
   final _Signal _selectionSignal = _Signal();
   final SyncScrollState _sync = SyncScrollState();
@@ -125,10 +147,32 @@ class DiffViewController extends ChangeNotifier {
   /// The scroll controller of [side]'s pane.
   ScrollController scroll(PaneSide side) => _scrolls[side.index];
 
-  /// Fires when either pane's geometry changes.
+  /// The rows of the unified view, built on first use.
+  UnifiedRows get unifiedRows => _unifiedRows ??= UnifiedRows.build(document);
+
+  /// The geometry of the unified view, built on first use.
+  PaneGeometry get unifiedGeometry {
+    final existing = _unifiedGeometry;
+    if (existing != null) return existing;
+    final g = PaneGeometry(
+      side: PaneSide.neu,
+      rowCount: unifiedRows.rowCount,
+      lineHeight: _resources.lineHeight,
+      placeholderHeight: _resources.placeholderHeight,
+    );
+    _unifiedGeometry = g;
+    _applyUnifiedFolds(g);
+    g.addListener(_geometryChanged);
+    return g;
+  }
+
+  /// The scroll controller of the unified view.
+  ScrollController get unifiedScroll => _unifiedScroll;
+
+  /// Fires when either pane's geometry, or the unified view's, changes.
   Listenable get geometryChanges => _geometrySignal;
 
-  /// Fires when the selection changes.
+  /// Fires when the selection or the unified selection changes.
   Listenable get selectionChanges => _selectionSignal;
 
   /// The inlays of both panes. Changing them notifies listeners.
@@ -136,6 +180,15 @@ class DiffViewController extends ChangeNotifier {
   set inlays(List<InlaySpec> value) {
     _inlays = List.unmodifiable(value);
     notifyListeners();
+  }
+
+  /// The unified slot [spec] is drawn in: the slot after the row of its
+  /// line, whichever side the line is on (0 above the first row).
+  int unifiedSlotOf(InlaySpec spec) {
+    final count = document.lineCount(spec.side);
+    if (spec.afterLine < 0 || count == 0) return 0;
+    final line = spec.afterLine < count ? spec.afterLine : count - 1;
+    return unifiedRows.rowOf(spec.side, line) + 1;
   }
 
   /// Adds [spec], revealing its line if a fold hides it.
@@ -184,7 +237,7 @@ class DiffViewController extends ChangeNotifier {
           : document.newLineCount,
       maxCachedLines: maxCachedLines,
     );
-    for (final g in _geometries) {
+    for (final g in [..._geometries, ?_unifiedGeometry]) {
       g.setMetrics(
         lineHeight: _resources.lineHeight,
         placeholderHeight: _resources.placeholderHeight,
@@ -206,10 +259,20 @@ class DiffViewController extends ChangeNotifier {
         );
       }
     }
+    final unified = _unifiedGeometry;
+    final rows = unified == null ? null : _unifiedHidden(region);
+    if (unified != null && rows != null) {
+      unified.anchorHint = (slot: rows.start, part: AnchorPart.slotTop);
+    }
     if (all) {
       folds.expandAll(region);
     } else {
       folds.expandOneLevel(region);
+    }
+    // A view that is not laid out took no hint; it must not keep it for a
+    // later change.
+    for (final g in [..._geometries, ?unified]) {
+      g.anchorHint = null;
     }
   }
 
@@ -219,9 +282,14 @@ class DiffViewController extends ChangeNotifier {
     return span == null ? -1 : folds.regionAt(side, span.start);
   }
 
+  /// The fold region whose placeholder is drawn in [slot] of the unified
+  /// view, or -1.
+  int unifiedFoldRegionAtSlot(int slot) => _unifiedFoldRegions[slot] ?? -1;
+
   /// Scrolls [side] so model line [line] sits at [viewportY] (default: the
   /// 1/3 anchor), revealing it if folded, and makes [side] the master.
   /// A [line] outside the side's lines is clamped to the first or last.
+  /// In a unified view it scrolls the row that shows the line.
   ///
   /// Before the pane is laid out (no scroll position yet, as when a file is
   /// opened at line N), nothing changes now: the jump is kept and made
@@ -229,7 +297,9 @@ class DiffViewController extends ChangeNotifier {
   /// it.
   void jumpToLine(PaneSide side, int line, {double? viewportY}) {
     final c = scroll(side);
-    if (!c.hasClients || !c.position.hasContentDimensions) {
+    final split = c.hasClients && c.position.hasContentDimensions;
+    final u = _unifiedScroll;
+    if (!split && !(u.hasClients && u.position.hasContentDimensions)) {
       _pendingJump = (side, line, viewportY);
       _schedulePendingJump();
       return;
@@ -238,25 +308,46 @@ class DiffViewController extends ChangeNotifier {
     final count = geometry(side).rowCount;
     if (count == 0) return;
     final target = line.clamp(0, count - 1);
-    final g = geometry(side);
+    final g = split ? geometry(side) : unifiedGeometry;
     folds.reveal(side, target);
     // The reveal recorded an anchor at the old position; this jump places
     // the content itself, so layout must not correct on top of it. The
     // geometry is already updated, the scroll extent only at layout: clamp
     // against the new content height.
     g.dropAnchor();
-    master = side;
-    final position = c.position;
+    if (split) master = side;
+    final row = split ? target : unifiedRows.rowOf(side, target);
+    final position = split ? c.position : u.position;
     final y = viewportY ?? position.viewportDimension / 3;
     final maxExtent = g.contentHeight - position.viewportDimension;
     position.jumpTo(
-      (g.topOfRow(target) - y).clamp(
+      (g.topOfRow(row) - y).clamp(
         position.minScrollExtent,
         maxExtent < position.minScrollExtent
             ? position.minScrollExtent
             : maxExtent,
       ),
     );
+  }
+
+  /// Keeps the line the leaving view shows at its anchor, so the view that
+  /// replaces it opens there: called by `SideBySideDiff` and `UnifiedDiff`
+  /// as they leave the tree, while their scroll positions still exist.
+  @internal
+  void keepPosition({required bool unified}) {
+    final s = unified ? _unifiedScroll : scroll(_master);
+    if (!s.hasClients || !s.position.hasContentDimensions) return;
+    final g = unified ? unifiedGeometry : geometry(_master);
+    if (g.rowCount == 0) return;
+    final p = s.position;
+    final hit = g.index.hit(p.pixels + p.viewportDimension / 3).slot;
+    var row = g.nextVisibleRow(hit < g.rowCount ? hit : g.rowCount - 1);
+    if (row >= g.rowCount) row = g.previousVisibleRow(g.rowCount - 1);
+    if (row < 0) return;
+    final side = unified ? unifiedRows.textSideAt(row) : _master;
+    final line = unified ? unifiedRows.lineAt(side, row) : row;
+    _pendingJump = (side, line, g.topOfRow(row) - p.pixels);
+    _schedulePendingJump();
   }
 
   void _schedulePendingJump() {
@@ -272,21 +363,39 @@ class DiffViewController extends ChangeNotifier {
   }
 
   /// Where model line [line] of [side] is in its viewport now, or null if
-  /// the pane is not laid out.
+  /// the pane is not laid out. In a unified view, where the row that shows
+  /// the line is.
   double? viewportYOfLine(PaneSide side, int line) {
     final c = scroll(side);
-    if (!c.hasClients) return null;
-    return geometry(side).topOfRow(line) - c.position.pixels;
+    if (c.hasClients) return geometry(side).topOfRow(line) - c.position.pixels;
+    if (!_unifiedScroll.hasClients) return null;
+    final row = unifiedRows.rowOf(side, line);
+    return unifiedGeometry.topOfRow(row) - _unifiedScroll.position.pixels;
   }
 
-  /// Scrolls [side] the least amount that shows model line [line].
+  /// Scrolls [side] the least amount that shows model line [line]. In a
+  /// unified view it shows the row of the line.
   void ensureLineVisible(PaneSide side, int line) {
     final c = scroll(side);
-    if (!c.hasClients) return;
+    if (!c.hasClients) {
+      if (line >= 0 && line < document.lineCount(side)) {
+        ensureUnifiedRowVisible(unifiedRows.rowOf(side, line));
+      }
+      return;
+    }
     master = side;
-    final p = c.position;
-    final top = geometry(side).topOfRow(line);
-    final bottom = top + geometry(side).lineHeight;
+    _scrollToShow(c.position, geometry(side), line);
+  }
+
+  /// Scrolls the unified view the least amount that shows [row].
+  void ensureUnifiedRowVisible(int row) {
+    if (!_unifiedScroll.hasClients) return;
+    _scrollToShow(_unifiedScroll.position, unifiedGeometry, row);
+  }
+
+  static void _scrollToShow(ScrollPosition p, PaneGeometry g, int row) {
+    final top = g.topOfRow(row);
+    final bottom = top + g.lineHeight;
     if (top < p.pixels) {
       p.jumpTo(top.clamp(p.minScrollExtent, p.maxScrollExtent));
     } else if (bottom > p.pixels + p.viewportDimension) {
@@ -300,10 +409,10 @@ class DiffViewController extends ChangeNotifier {
   }
 
   /// Moves the shared horizontal offset by [dx], clamped to the widest
-  /// line on screen in either pane. [codeWidth] is the width of a pane's
-  /// code area; it is remembered so the offset is clamped again when
-  /// vertical scrolling or a geometry change brings shorter lines into view
-  /// (otherwise both panes could show only empty rows).
+  /// line on screen in either pane or the unified view. [codeWidth] is the
+  /// width of a pane's code area; it is remembered so the offset is clamped
+  /// again when vertical scrolling or a geometry change brings shorter
+  /// lines into view (otherwise both panes could show only empty rows).
   void scrollHorizontally(double dx, {required double codeWidth}) {
     _codeWidth = codeWidth;
     horizontal.value = (horizontal.value + dx).clamp(
@@ -332,26 +441,53 @@ class DiffViewController extends ChangeNotifier {
     for (final side in PaneSide.values) {
       final c = scroll(side);
       if (!c.hasClients) continue;
-      final g = geometry(side);
-      final p = c.position.pixels;
-      final first = g.index.hit(p).slot;
-      final last = g.index.hit(p + c.position.viewportDimension).slot;
-      // Visible rows only, as paint draws them: a fold on screen hides
-      // rows that neither count nor get a layout built.
-      for (
-        var r = g.nextVisibleRow(first);
-        r <= last && r < g.rowCount;
-        r = g.nextVisibleRow(r + 1)
+      final width = _widestOnScreen(
+        geometry(side),
+        c.position,
+        (r) => (side, r),
+      );
+      if (width > w) w = width;
+    }
+    if (_unifiedScroll.hasClients) {
+      final rows = unifiedRows;
+      final width = _widestOnScreen(unifiedGeometry, _unifiedScroll.position, (
+        r,
       ) {
-        final line = lines.lineAt(side, r);
-        if (line == null) continue;
-        final layout = resources.lines.getOrBuild(
-          side.index | (r << 1),
-          line,
-          () => resources.layouts.build(line),
-        );
-        if (layout.width > w) w = layout.width;
-      }
+        final side = rows.textSideAt(r);
+        return (side, rows.lineAt(side, r));
+      });
+      if (width > w) w = width;
+    }
+    return w;
+  }
+
+  // The widest line drawn in [g]'s viewport; [lineOf] maps a row to the
+  // side and line it shows.
+  double _widestOnScreen(
+    PaneGeometry g,
+    ScrollPosition position,
+    (PaneSide, int) Function(int row) lineOf,
+  ) {
+    var w = 0.0;
+    final p = position.pixels;
+    final first = g.index.hit(p).slot;
+    final last = g.index.hit(p + position.viewportDimension).slot;
+    // Visible rows only, as paint draws them: a fold on screen hides
+    // rows that neither count nor get a layout built.
+    for (
+      var r = g.nextVisibleRow(first);
+      r <= last && r < g.rowCount;
+      r = g.nextVisibleRow(r + 1)
+    ) {
+      final (side, number) = lineOf(r);
+      final line = lines.lineAt(side, number);
+      if (line == null) continue;
+      final layout = resources.lines.getOrBuild(
+        side.index | (number << 1),
+        line,
+        () => resources.layouts.build(line),
+      );
+      if (layout.width > w) w = layout.width;
     }
     return w;
   }
@@ -365,6 +501,38 @@ class DiffViewController extends ChangeNotifier {
     final text = copyTextOf(await lines.load(sel.side, sel.span));
     await Clipboard.setData(ClipboardData(text: text));
     return text;
+  }
+
+  /// Copies the shown text of the unified selection's rows to the
+  /// clipboard (see [unifiedTextOf]). Returns the text, or null when
+  /// nothing is selected.
+  Future<String?> copyUnifiedSelection() async {
+    final sel = unifiedSelection.value;
+    if (sel == null) return null;
+    final text = await unifiedTextOf(sel.span);
+    await Clipboard.setData(ClipboardData(text: text));
+    return text;
+  }
+
+  /// The text the unified [rows] show, without markers: each row's line
+  /// (the new one of an unchanged row) with its terminator, loading lines
+  /// that are not in memory.
+  Future<String> unifiedTextOf(ModelSpan rows) async {
+    final r = unifiedRows;
+    final spans = r.linesIn(rows);
+    final old = spans.old.isEmpty
+        ? const <DiffLine>[]
+        : await lines.load(PaneSide.old, spans.old);
+    final neu = spans.neu.isEmpty
+        ? const <DiffLine>[]
+        : await lines.load(PaneSide.neu, spans.neu);
+    return copyTextOf([
+      for (var row = rows.start; row < rows.end; row++)
+        if (r.newLineAt(row) >= 0)
+          neu[r.newLineAt(row) - spans.neu.start]
+        else
+          old[r.oldLineAt(row) - spans.old.start],
+    ]);
   }
 
   /// Re-aligns the slave pane to the master now.
@@ -406,6 +574,27 @@ class DiffViewController extends ChangeNotifier {
       geometry(side)
           .setHidden([for (final (_, span) in folds.hiddenSpans(side)) span]);
     }
+    final unified = _unifiedGeometry;
+    if (unified != null) _applyUnifiedFolds(unified);
+  }
+
+  // The unified rows region [i] hides now, or null.
+  ModelSpan? _unifiedHidden(int i) => unifiedRows.rowsOf(
+    old: folds.hiddenSpan(i, PaneSide.old),
+    neu: folds.hiddenSpan(i, PaneSide.neu),
+  );
+
+  void _applyUnifiedFolds(PaneGeometry g) {
+    final spans = <ModelSpan>[];
+    final regions = <int, int>{};
+    for (var i = 0; i < folds.regions.length; i++) {
+      final span = _unifiedHidden(i);
+      if (span == null) continue;
+      spans.add(span);
+      regions[span.start] = i;
+    }
+    _unifiedFoldRegions = regions;
+    g.setHidden(spans);
   }
 
   void _geometryChanged() {
@@ -425,12 +614,13 @@ class DiffViewController extends ChangeNotifier {
   void dispose() {
     _disposed = true;
     folds.removeListener(_applyFolds);
-    for (final g in _geometries) {
+    for (final g in [..._geometries, ?_unifiedGeometry]) {
       g.removeListener(_geometryChanged);
     }
     for (final c in _scrolls) {
       c.dispose();
     }
+    _unifiedScroll.dispose();
     _geometrySignal.dispose();
     _selectionSignal.dispose();
     horizontal.dispose();

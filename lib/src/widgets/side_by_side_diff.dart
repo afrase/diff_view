@@ -42,6 +42,12 @@ class _SideBySideDiffState extends State<SideBySideDiff> {
     _configure();
   }
 
+  @override
+  void deactivate() {
+    widget.controller.keepPosition(unified: false);
+    super.deactivate();
+  }
+
   void _configure() => widget.controller.configure(
     theme: widget.theme,
     devicePixelRatio: MediaQuery.devicePixelRatioOf(context),

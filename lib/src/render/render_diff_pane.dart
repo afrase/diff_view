@@ -5,6 +5,7 @@ import 'package:diff_view/src/model/diff_line.dart';
 import 'package:diff_view/src/model/line_coords.dart';
 import 'package:diff_view/src/model/line_source.dart';
 import 'package:diff_view/src/model/pane_geometry.dart';
+import 'package:diff_view/src/model/unified_rows.dart';
 import 'package:diff_view/src/render/paint_resources.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/rendering.dart';
@@ -45,6 +46,9 @@ class DiffInlaySlot extends ParentDataWidget<DiffInlayParentData> {
 
 /// The viewport of one diff pane: paints every visible row itself
 /// and hosts inlay widgets as children. Used as a `Scrollable`'s viewport.
+///
+/// With [unified] it is the column of a unified view instead: [geometry]
+/// lays out the unified rows and each row shows its old or new line.
 class DiffPaneViewport extends MultiChildRenderObjectWidget {
   /// Creates the viewport. [children] are inlays wrapped in [DiffInlaySlot].
   const new({
@@ -55,6 +59,7 @@ class DiffPaneViewport extends MultiChildRenderObjectWidget {
     required this.lines,
     required this.resources,
     required this.horizontalOffset,
+    this.unified,
     this.anchorFraction = 1 / 3,
     this.onPaint,
     super.children,
@@ -64,8 +69,12 @@ class DiffPaneViewport extends MultiChildRenderObjectWidget {
   /// Vertical scroll offset.
   final ViewportOffset offset;
 
-  /// The pane's side.
+  /// The pane's side. A unified view only reports it to [onPaint].
   final PaneSide side;
+
+  /// The rows of a unified view, or null for one pane of a side-by-side
+  /// view.
+  final UnifiedRows? unified;
 
   /// The file's header.
   final DiffDocument document;
@@ -97,6 +106,7 @@ class DiffPaneViewport extends MultiChildRenderObjectWidget {
     lines: lines,
     resources: resources,
     horizontalOffset: horizontalOffset,
+    unified: unified,
     anchorFraction: anchorFraction,
     onPaint: onPaint,
   );
@@ -111,6 +121,7 @@ class DiffPaneViewport extends MultiChildRenderObjectWidget {
       ..lines = lines
       ..resources = resources
       ..horizontalOffset = horizontalOffset
+      ..unified = unified
       ..anchorFraction = anchorFraction
       ..onPaint = onPaint;
   }
@@ -131,6 +142,11 @@ class DiffPaneViewport extends MultiChildRenderObjectWidget {
 /// Scrolling only repaints. Paint draws, per visible row, its change tint,
 /// inner (word) highlights and cached paragraph, then the gutter, the fold
 /// placeholders and the inlay children.
+///
+/// With [unified] the rows are those of a unified view: a deleted row is
+/// tinted as a deletion and an inserted one as an insertion, and the gutter
+/// shows both line numbers. Layouts are cached by side and line, so both
+/// views share them.
 class RenderDiffPane extends RenderBox
     with
         ContainerRenderObjectMixin<RenderBox, DiffInlayParentData>,
@@ -144,6 +160,7 @@ class RenderDiffPane extends RenderBox
     required this._lines,
     required this._resources,
     required ValueListenable<double> horizontalOffset,
+    this._unified,
     this.anchorFraction = 1 / 3,
     this.onPaint,
   }) : _horizontal = horizontalOffset;
@@ -155,6 +172,7 @@ class RenderDiffPane extends RenderBox
   DiffLineSource _lines;
   DiffPaintResources _resources;
   ValueListenable<double> _horizontal;
+  UnifiedRows? _unified;
 
   /// Paint probe.
   PanePaintObserver? onPaint;
@@ -238,14 +256,25 @@ class RenderDiffPane extends RenderBox
     markNeedsPaint();
   }
 
+  /// The rows of a unified view, or null for a side-by-side pane.
+  UnifiedRows? get unified => _unified;
+  set unified(UnifiedRows? value) {
+    if (identical(value, _unified)) return;
+    _unified = value;
+    markNeedsLayout();
+  }
+
   /// Anchor position as a fraction of the viewport height.
   double anchorFraction;
+
+  GutterMetrics get _gutter =>
+      _unified == null ? _resources.gutter : _resources.unifiedGutter;
 
   /// Width available to inlays.
   double get inlayWidth => math.max(
     0,
     math.min(
-      size.width - _resources.gutter.gutterWidth - 12,
+      size.width - _gutter.gutterWidth - 12,
       _resources.theme.inlayMaxWidth,
     ),
   );
@@ -460,7 +489,7 @@ class RenderDiffPane extends RenderBox
   Offset _childOffset(RenderBox child) {
     final data = child.parentData! as DiffInlayParentData;
     return Offset(
-      _resources.gutter.gutterWidth + 4,
+      _gutter.gutterWidth + 4,
       _geometry.topOfSlot(data.slot) + data.dyInSlot - _offset.pixels,
     );
   }
@@ -507,7 +536,8 @@ class RenderDiffPane extends RenderBox
     final canvas = context.canvas;
     final res = _resources;
     final theme = res.theme;
-    final g = res.gutter;
+    final g = _gutter;
+    final rows = _unified;
     final pixels = _offset.pixels;
     final lineHeight = _geometry.lineHeight;
     final rowCount = _geometry.rowCount;
@@ -519,13 +549,17 @@ class RenderDiffPane extends RenderBox
     final last = _geometry.index.hit(pixels + size.height).slot;
     if (rowCount > 0) {
       final margin = math.max(1, last - first);
-      _lines.prefetch(
-        _side,
-        ModelSpan(
-          math.max(0, first - margin),
-          math.min(rowCount, last + margin + 1),
-        ),
+      final span = ModelSpan(
+        math.max(0, first - margin),
+        math.min(rowCount, last + margin + 1),
       );
+      if (rows == null) {
+        _lines.prefetch(_side, span);
+      } else {
+        final lines = rows.linesIn(span);
+        if (!lines.old.isEmpty) _lines.prefetch(PaneSide.old, lines.old);
+        if (!lines.neu.isEmpty) _lines.prefetch(PaneSide.neu, lines.neu);
+      }
     }
 
     // Pass 1: code area (clipped right of the gutter).
@@ -549,8 +583,12 @@ class RenderDiffPane extends RenderBox
       r = _geometry.nextVisibleRow(r + 1)
     ) {
       final y = offset.dy + _geometry.topOfRow(r) - pixels;
-      final line = _lines.lineAt(_side, r);
-      final kind = line?.kind ?? _kindFromDocument(r);
+      final side = rows?.textSideAt(r) ?? _side;
+      final number = rows?.lineAt(side, r) ?? r;
+      final line = _lines.lineAt(side, number);
+      final kind = rows != null
+          ? _unifiedKind(rows.kindAt(r))
+          : line?.kind ?? _kindFromDocument(r);
       final tint = _lineTint(kind);
       if (tint != null) {
         canvas.drawRect(
@@ -563,7 +601,7 @@ class RenderDiffPane extends RenderBox
         continue;
       }
       final layout = res.lines.getOrBuild(
-        _side.index | (r << 1),
+        side.index | (number << 1),
         line,
         () => res.layouts.build(line),
       );
@@ -600,7 +638,9 @@ class RenderDiffPane extends RenderBox
       r = _geometry.nextVisibleRow(r + 1)
     ) {
       final y = offset.dy + _geometry.topOfRow(r) - pixels;
-      final kind = _lines.lineAt(_side, r)?.kind ?? _kindFromDocument(r);
+      final kind = rows != null
+          ? _unifiedKind(rows.kindAt(r))
+          : _lines.lineAt(_side, r)?.kind ?? _kindFromDocument(r);
       final changed = kind != LineKind.unchanged;
       if (changed) {
         // The line's tint runs through the gutter, as in JetBrains IDEs.
@@ -614,36 +654,24 @@ class RenderDiffPane extends RenderBox
           Offset(offset.dx + g.markerX, y + res.textTop),
         );
       }
-      final number = res.number(displayLineOf(r), changed: changed);
-      canvas.drawParagraph(
-        number,
-        Offset(
-          offset.dx + g.numberRight - number.maxIntrinsicWidth,
-          y + res.textTop,
-        ),
-      );
+      if (rows == null) {
+        _paintNumber(canvas, r, offset.dx + g.numberRight, y, changed);
+        continue;
+      }
+      final oldLine = rows.oldLineAt(r);
+      if (oldLine >= 0) {
+        _paintNumber(canvas, oldLine, offset.dx + g.oldNumberRight, y, changed);
+      }
+      final newLine = rows.newLineAt(r);
+      if (newLine >= 0) {
+        _paintNumber(canvas, newLine, offset.dx + g.numberRight, y, changed);
+      }
     }
 
     // Insertions and deletions have no lines on this side: a line across
     // the pane marks where the other side's lines go, and meets the ribbon.
-    final blocks = _document.blocks;
-    for (
-      var i = _document.firstBlockEndingAfter(_side, first);
-      i < blocks.length;
-      i++
-    ) {
-      final span = blocks[i].span(_side);
-      if (span.start > last + 1) break;
-      if (!span.isEmpty) continue;
-      final y = offset.dy + _geometry.topOfSlot(span.start) - pixels;
-      canvas.drawRect(
-        Rect.fromLTWH(offset.dx, y - 1, size.width, 2),
-        tintPaint
-          ..color = blocks[i].kind == BlockKind.inserted
-              ? theme.ribbonInserted
-              : theme.ribbonDeleted,
-      );
-    }
+    // A unified view shows both sides' lines.
+    if (rows == null) _paintEmptyBlockLines(canvas, offset, first, last);
     // Fold placeholders.
     final spans = _geometry.hiddenSpans;
     for (var i = _firstSpanFrom(spans, first); i < spans.length; i++) {
@@ -673,6 +701,49 @@ class RenderDiffPane extends RenderBox
       }
       child = data.nextSibling;
     }
+  }
+
+  void _paintEmptyBlockLines(
+    Canvas canvas,
+    Offset offset,
+    int first,
+    int last,
+  ) {
+    final theme = _resources.theme;
+    final pixels = _offset.pixels;
+    final blocks = _document.blocks;
+    for (
+      var i = _document.firstBlockEndingAfter(_side, first);
+      i < blocks.length;
+      i++
+    ) {
+      final span = blocks[i].span(_side);
+      if (span.start > last + 1) break;
+      if (!span.isEmpty) continue;
+      final y = offset.dy + _geometry.topOfSlot(span.start) - pixels;
+      canvas.drawRect(
+        Rect.fromLTWH(offset.dx, y - 1, size.width, 2),
+        _tint
+          ..color = blocks[i].kind == BlockKind.inserted
+              ? theme.ribbonInserted
+              : theme.ribbonDeleted,
+      );
+    }
+  }
+
+  // The gutter number of model [line], right-aligned at [right].
+  void _paintNumber(
+    Canvas canvas,
+    int line,
+    double right,
+    double y,
+    bool changed,
+  ) {
+    final number = _resources.number(displayLineOf(line), changed: changed);
+    canvas.drawParagraph(
+      number,
+      Offset(right - number.maxIntrinsicWidth, y + _resources.textTop),
+    );
   }
 
   void _paintWord(Canvas canvas, double x0, double x1, double y, Paint p) {
@@ -715,7 +786,7 @@ class RenderDiffPane extends RenderBox
     canvas.drawParagraph(
       label,
       Offset(
-        rect.left + res.gutter.codeX,
+        rect.left + _gutter.codeX,
         rect.top + (rect.height - res.layouts.textHeight) / 2,
       ),
     );
@@ -730,6 +801,12 @@ class RenderDiffPane extends RenderBox
       BlockKind.deleted => LineKind.deleted,
     };
   }
+
+  static LineKind _unifiedKind(UnifiedRowKind kind) => switch (kind) {
+    UnifiedRowKind.context => LineKind.unchanged,
+    UnifiedRowKind.deleted => LineKind.deleted,
+    UnifiedRowKind.inserted => LineKind.added,
+  };
 
   Color? _lineTint(LineKind kind) {
     final t = _resources.theme;

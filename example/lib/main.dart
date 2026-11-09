@@ -129,9 +129,11 @@ class ExampleApp extends StatelessWidget {
   const ExampleApp({super.key});
 
   @override
-  Widget build(BuildContext context) => const MaterialApp(
+  Widget build(BuildContext context) => MaterialApp(
     debugShowCheckedModeBanner: false,
-    home: Scaffold(body: DiffScreen()),
+    theme: ThemeData(brightness: Brightness.light),
+    darkTheme: ThemeData(brightness: Brightness.dark),
+    home: const Scaffold(body: DiffScreen()),
   );
 }
 
@@ -151,6 +153,7 @@ class _DiffScreenState extends State<DiffScreen> {
   );
   DiffViewController? _controller;
   DiffThemeData? _theme;
+  bool _unified = false;
 
   @override
   void didChangeDependencies() {
@@ -176,9 +179,54 @@ class _DiffScreenState extends State<DiffScreen> {
   }
 
   @override
-  Widget build(BuildContext context) => SideBySideDiff(
-    controller: _controller!,
-    theme: _theme!,
-    inlayBuilder: (context, spec) => const SizedBox.shrink(),
-  );
+  Widget build(BuildContext context) {
+    final controller = _controller!;
+    final theme = _theme!;
+    Widget inlay(BuildContext context, InlaySpec spec) =>
+        const SizedBox.shrink();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        ColoredBox(
+          color: theme.gutterBackground,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            child: Row(
+              children: [
+                Text(
+                  _diff.document.path,
+                  style: TextStyle(color: theme.text, fontSize: 13),
+                ),
+                const Spacer(),
+                SegmentedButton<bool>(
+                  segments: const [
+                    ButtonSegment(value: false, label: Text('Split')),
+                    ButtonSegment(value: true, label: Text('Unified')),
+                  ],
+                  selected: {_unified},
+                  showSelectedIcon: false,
+                  onSelectionChanged: (s) => setState(() => _unified = s.first),
+                ),
+              ],
+            ),
+          ),
+        ),
+        // Both views take the same controller; the new one opens at the
+        // line the old one showed.
+        Expanded(
+          child: _unified
+              ? UnifiedDiff(
+                  controller: controller,
+                  theme: theme,
+                  inlayBuilder: inlay,
+                )
+              : SideBySideDiff(
+                  controller: controller,
+                  theme: theme,
+                  inlayBuilder: inlay,
+                ),
+        ),
+      ],
+    );
+  }
 }

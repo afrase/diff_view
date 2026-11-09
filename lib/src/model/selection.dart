@@ -104,6 +104,90 @@ final class LineSelectionController {
   }
 }
 
+/// A range of rows of a unified diff: where the gutter drag started
+/// ([anchor]) and where it is now ([focus]), both rows.
+@immutable
+final class RowSelection {
+  /// Creates a selection.
+  const new({required this.anchor, required this.focus});
+
+  /// The row the selection started at.
+  final int anchor;
+
+  /// The row the selection extends to.
+  final int focus;
+
+  /// The selected rows (never empty).
+  ModelSpan get span => anchor <= focus
+      ? ModelSpan(anchor, focus + 1)
+      : ModelSpan(focus, anchor + 1);
+
+  /// A copy with a new [focus].
+  RowSelection withFocus(int focus) =>
+      RowSelection(anchor: anchor, focus: focus);
+
+  @override
+  bool operator ==(Object other) =>
+      other is RowSelection && other.anchor == anchor && other.focus == focus;
+
+  @override
+  int get hashCode => Object.hash(anchor, focus);
+
+  @override
+  String toString() => 'RowSelection($span)';
+}
+
+/// Row-selection state of a unified view: gutter drag, Shift+click and
+/// Shift+arrow extension. `UnifiedRows.linesIn` gives the old and new
+/// lines a selection covers.
+final class RowSelectionController {
+  /// Creates a controller. Ranges longer than [cap] rows are allowed but
+  /// flagged by [isOverCap] (the band turns amber).
+  new({this.cap = 200});
+
+  /// Viewer limit on a comment range.
+  final int cap;
+
+  RowSelection? _value;
+  final List<void Function()> _listeners = [];
+
+  /// The current selection, or null.
+  RowSelection? get value => _value;
+
+  /// Whether the selection is longer than [cap].
+  bool get isOverCap => (_value?.span.length ?? 0) > cap;
+
+  /// Registers [listener], called after every change.
+  void addListener(void Function() listener) => _listeners.add(listener);
+
+  /// Removes a listener.
+  void removeListener(void Function() listener) => _listeners.remove(listener);
+
+  /// Starts a selection of [row] (mouse down in the gutter).
+  void start(int row) => _set(RowSelection(anchor: row, focus: row));
+
+  /// Moves the focus to [row] (drag).
+  void extendTo(int row) {
+    final v = _value;
+    if (v == null) return;
+    _set(v.withFocus(row));
+  }
+
+  /// Shift+click on [row]: extends the selection, or starts one.
+  void shiftClick(int row) => _value == null ? start(row) : extendTo(row);
+
+  /// Clears the selection.
+  void clear() => _set(null);
+
+  void _set(RowSelection? next) {
+    if (next == _value) return;
+    _value = next;
+    for (final l in List.of(_listeners)) {
+      l();
+    }
+  }
+}
+
 /// The clipboard text of whole lines: each line's text followed by its own
 /// terminator ([DiffLine.ending]: `\n`, `\r\n`, or none for a last line
 /// without one), so the copy is byte-identical to that part of the file.
