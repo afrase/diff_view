@@ -260,9 +260,9 @@ class DiffViewController extends ChangeNotifier {
       }
     }
     final unified = _unifiedGeometry;
-    final rows = unified == null ? null : _unifiedHidden(region);
-    if (unified != null && rows != null) {
-      unified.anchorHint = (slot: rows.start, part: AnchorPart.slotTop);
+    final rows = unified == null ? const <ModelSpan>[] : _unifiedHidden(region);
+    if (unified != null && rows.isNotEmpty) {
+      unified.anchorHint = (slot: rows.first.start, part: AnchorPart.slotTop);
     }
     if (all) {
       folds.expandAll(region);
@@ -335,16 +335,19 @@ class DiffViewController extends ChangeNotifier {
   /// as they leave the tree, while their scroll positions still exist.
   @internal
   void keepPosition({required bool unified}) {
-    final s = unified ? _unifiedScroll : scroll(_master);
+    // An empty master (the old pane of an added file) has no line to
+    // keep; the other pane has.
+    final pane = geometry(_master).rowCount == 0 ? _master.other : _master;
+    final s = unified ? _unifiedScroll : scroll(pane);
     if (!s.hasClients || !s.position.hasContentDimensions) return;
-    final g = unified ? unifiedGeometry : geometry(_master);
+    final g = unified ? unifiedGeometry : geometry(pane);
     if (g.rowCount == 0) return;
     final p = s.position;
     final hit = g.index.hit(p.pixels + p.viewportDimension / 3).slot;
     var row = g.nextVisibleRow(hit < g.rowCount ? hit : g.rowCount - 1);
     if (row >= g.rowCount) row = g.previousVisibleRow(g.rowCount - 1);
     if (row < 0) return;
-    final side = unified ? unifiedRows.textSideAt(row) : _master;
+    final side = unified ? unifiedRows.textSideAt(row) : pane;
     final line = unified ? unifiedRows.lineAt(side, row) : row;
     _pendingJump = (side, line, g.topOfRow(row) - p.pixels);
     _schedulePendingJump();
@@ -516,7 +519,9 @@ class DiffViewController extends ChangeNotifier {
 
   /// The text the unified [rows] show, without markers: each row's line
   /// (the new one of an unchanged row) with its terminator, loading lines
-  /// that are not in memory.
+  /// that are not in memory. A line without a terminator (an old last
+  /// line) that is not the last one copied ends with the next line's
+  /// terminator, or `\n`.
   Future<String> unifiedTextOf(ModelSpan rows) async {
     final r = unifiedRows;
     final spans = r.linesIn(rows);
@@ -526,13 +531,26 @@ class DiffViewController extends ChangeNotifier {
     final neu = spans.neu.isEmpty
         ? const <DiffLine>[]
         : await lines.load(PaneSide.neu, spans.neu);
-    return copyTextOf([
+    final shown = [
       for (var row = rows.start; row < rows.end; row++)
         if (r.newLineAt(row) >= 0)
           neu[r.newLineAt(row) - spans.neu.start]
         else
           old[r.oldLineAt(row) - spans.old.start],
-    ]);
+    ];
+    final out = StringBuffer();
+    for (var i = 0; i < shown.length; i++) {
+      final l = shown[i];
+      var end = l.ending.terminator;
+      if (end.isEmpty && i + 1 < shown.length) {
+        final next = shown[i + 1].ending.terminator;
+        end = next.isEmpty ? '\n' : next;
+      }
+      out
+        ..write(l.text)
+        ..write(end);
+    }
+    return out.toString();
   }
 
   /// Re-aligns the slave pane to the master now.
@@ -578,8 +596,10 @@ class DiffViewController extends ChangeNotifier {
     if (unified != null) _applyUnifiedFolds(unified);
   }
 
-  // The unified rows region [i] hides now, or null.
-  ModelSpan? _unifiedHidden(int i) => unifiedRows.rowsOf(
+  // The unified rows region [i] hides now: the rows whose lines are hidden
+  // on their own sides. A region whose sides differ in length can hide
+  // two spans (paired rows, then rows of the longer side alone).
+  List<ModelSpan> _unifiedHidden(int i) => unifiedRows.rowsWithin(
     old: folds.hiddenSpan(i, PaneSide.old),
     neu: folds.hiddenSpan(i, PaneSide.neu),
   );
@@ -588,10 +608,10 @@ class DiffViewController extends ChangeNotifier {
     final spans = <ModelSpan>[];
     final regions = <int, int>{};
     for (var i = 0; i < folds.regions.length; i++) {
-      final span = _unifiedHidden(i);
-      if (span == null) continue;
-      spans.add(span);
-      regions[span.start] = i;
+      for (final span in _unifiedHidden(i)) {
+        spans.add(span);
+        regions[span.start] = i;
+      }
     }
     _unifiedFoldRegions = regions;
     g.setHidden(spans);

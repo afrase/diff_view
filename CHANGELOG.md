@@ -5,6 +5,9 @@
 - `jumpToLine`, `viewportYOfLine` and `ensureLineVisible` act on the unified view when it is the one laid out. Switching views keeps the line in place.
 - `GutterMetrics.unified` and `DiffPaintResources.unifiedGutter` lay out the two-number gutter; `DiffPaneViewport` takes `unified`.
 - The example app has a Split/Unified switch.
+- `selectionChanges` and `geometryChanges` also fire for the unified view.
+- `DiffPane` is a `StatelessWidget`.
+- Fix: an inlay added to a file shorter than the viewport no longer scrolls the view past its end and springs back.
 
 ## 0.1.0
 

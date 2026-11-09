@@ -36,6 +36,28 @@ SyntheticDiff bigDiff() => SyntheticDiff([
   const Eq(12),
 ]);
 
+/// A changed first and last line around an unchanged region whose sides
+/// differ in length (a whitespace policy): old 1-30 against new 1-25.
+DiffDocument unequalGap() => DiffDocument(
+  oldLineCount: 32,
+  newLineCount: 27,
+  blocks: const [
+    DiffBlock(
+      index: 0,
+      kind: BlockKind.modified,
+      old: ModelSpan(0, 1),
+      neu: ModelSpan(0, 1),
+    ),
+    DiffBlock(
+      index: 1,
+      kind: BlockKind.modified,
+      old: ModelSpan(31, 32),
+      neu: ModelSpan(26, 27),
+    ),
+  ],
+  gaps: const [DiffGap(index: 0, old: ModelSpan(1, 31), neu: ModelSpan(1, 26))],
+);
+
 class Harness {
   new(this.diff, {int foldContext = 4})
     : controller = DiffViewController(
@@ -153,12 +175,6 @@ void main() {
       final lines = rows.linesIn(const ModelSpan(3, 9));
       expect(lines.old, const ModelSpan(3, 5));
       expect(lines.neu, const ModelSpan(2, 7));
-      expect(rows.rowsOf(old: const ModelSpan(4, 6)), const ModelSpan(7, 11));
-      expect(
-        rows.rowsOf(old: const ModelSpan(6, 7), neu: const ModelSpan(8, 10)),
-        const ModelSpan(10, 14),
-      );
-      expect(rows.rowsOf(old: const ModelSpan.empty(3)), isNull);
     });
 
     test('an added file is all inserted rows, a deleted one all deleted', () {
@@ -187,6 +203,30 @@ void main() {
         ],
       );
       expect(describeAll(UnifiedRows.build(doc)), ['c 0 0', 'c 1 1', 'c 2 -']);
+    });
+
+    test('rowsWithin keeps rows that show a line not in the spans', () {
+      final rows = UnifiedRows.build(unequalGap());
+      // Rows 2-26 pair old and new 1-25, rows 27-31 show old 26-30 alone.
+      expect(
+        rows.rowsWithin(
+          old: const ModelSpan(5, 27),
+          neu: const ModelSpan(5, 22),
+        ),
+        const [ModelSpan(6, 23), ModelSpan(27, 28)],
+      );
+      expect(
+        rows.rowsWithin(
+          old: const ModelSpan(5, 31),
+          neu: const ModelSpan(5, 26),
+        ),
+        const [ModelSpan(6, 32)],
+      );
+      expect(rows.rowsWithin(old: const ModelSpan(20, 31)), const [
+        ModelSpan(27, 32),
+      ]);
+      expect(rows.rowsWithin(neu: const ModelSpan(5, 22)), isEmpty);
+      expect(rows.rowsWithin(old: const ModelSpan.empty(3)), isEmpty);
     });
 
     test('20,000 lines a side build in well under a frame budget', () {
@@ -241,6 +281,47 @@ void main() {
       expect(g.hiddenSpans.length, 2);
       c.toggleFold(0, all: true);
       expect(g.hiddenSpans, const [ModelSpan(24, 42)]);
+    });
+
+    test('of an unequal region hide only what both panes hide', () {
+      final doc = unequalGap();
+      final u = DiffViewController(
+        document: doc,
+        lines: MemoryLineSource(
+          old: [
+            for (var i = 0; i < doc.oldLineCount; i++)
+              DiffLine(line: i, text: 'o$i'),
+          ],
+          neu: [
+            for (var i = 0; i < doc.newLineCount; i++)
+              DiffLine(line: i, text: 'n$i'),
+          ],
+        ),
+        theme: DiffThemeData.light(),
+      );
+      addTearDown(u.dispose);
+      final g = u.unifiedGeometry;
+      expect(u.geometry(PaneSide.old).hiddenSpans, const [ModelSpan(5, 27)]);
+      expect(u.geometry(PaneSide.neu).hiddenSpans, const [ModelSpan(5, 22)]);
+      // New 22-25 (rows 23-26) show in the new pane, so in unified too.
+      expect(g.hiddenSpans, const [ModelSpan(6, 23), ModelSpan(27, 28)]);
+      expect(u.unifiedFoldRegionAtSlot(6), 0);
+      expect(u.unifiedFoldRegionAtSlot(27), 0);
+      for (var line = 22; line < 26; line++) {
+        expect(g.isRowVisible(u.unifiedRows.rowOf(PaneSide.neu, line)), isTrue);
+      }
+
+      const spec = InlaySpec(id: 'x', side: PaneSide.neu, afterLine: 22);
+      u.addInlay(spec);
+      expect(u.unifiedSlotOf(spec), 24);
+      expect(g.isRowVisible(23), isTrue);
+      expect(u.folds.expandedLevel(0), 0, reason: 'nothing to reveal');
+
+      // Revealing a hidden old line shows its row.
+      u.folds.reveal(PaneSide.old, 26);
+      expect(g.isRowVisible(u.unifiedRows.rowOf(PaneSide.old, 26)), isTrue);
+      u.toggleFold(0, all: true);
+      expect(g.hiddenSpans, isEmpty);
     });
   });
 
@@ -376,6 +457,41 @@ void main() {
     expect(c.unifiedSelection.value, isNull);
   });
 
+  test('a copied old last line without a newline ends with one', () async {
+    final d = TextDiff.compute('a\nb', 'a\nc\n');
+    final c = DiffViewController(
+      document: d.document,
+      lines: d.lines,
+      theme: DiffThemeData.light(),
+    );
+    addTearDown(c.dispose);
+    final all = ModelSpan(0, c.unifiedRows.rowCount);
+    expect(await c.unifiedTextOf(all), 'a\nb\nc\n');
+    final crlf = TextDiff.compute('a\r\nb', 'a\r\nc\r\n');
+    final cc = DiffViewController(
+      document: crlf.document,
+      lines: crlf.lines,
+      theme: DiffThemeData.light(),
+    );
+    addTearDown(cc.dispose);
+    expect(
+      await cc.unifiedTextOf(ModelSpan(0, cc.unifiedRows.rowCount)),
+      'a\r\nb\r\nc\r\n',
+    );
+    // Neither side ends with a newline: the copy ends as the file does.
+    final none = TextDiff.compute('a\nb', 'a\nc');
+    final cn = DiffViewController(
+      document: none.document,
+      lines: none.lines,
+      theme: DiffThemeData.light(),
+    );
+    addTearDown(cn.dispose);
+    expect(
+      await cn.unifiedTextOf(ModelSpan(0, cn.unifiedRows.rowCount)),
+      'a\nb\nc',
+    );
+  });
+
   testWidgets('jumpToLine and ensureLineVisible scroll the unified view', (
     tester,
   ) async {
@@ -438,6 +554,26 @@ void main() {
     await tester.pumpWidget(h.app(unified: false));
     await tester.pump();
     expect(c.unifiedScroll.hasClients, isFalse);
+    expect(c.viewportYOfLine(PaneSide.neu, 1000), closeTo(200, 0.5));
+  });
+
+  testWidgets('switching from an added file keeps the line in place', (
+    tester,
+  ) async {
+    tester.view
+      ..physicalSize = const Size(1600, 1200)
+      ..devicePixelRatio = 2;
+    addTearDown(tester.view.reset);
+    final h = Harness(SyntheticDiff(const [Ins(3000)]), foldContext: -1);
+    final c = h.controller;
+    addTearDown(c.dispose);
+    await tester.pumpWidget(h.app(unified: false));
+    c.jumpToLine(PaneSide.neu, 1000, viewportY: 200);
+    await tester.pump();
+    // A pointer over the empty old pane makes it the master.
+    c.master = PaneSide.old;
+    await tester.pumpWidget(h.app());
+    await tester.pump();
     expect(c.viewportYOfLine(PaneSide.neu, 1000), closeTo(200, 0.5));
   });
 

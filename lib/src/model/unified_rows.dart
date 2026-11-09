@@ -133,20 +133,42 @@ final class UnifiedRows {
     neu: ModelSpan(_newBefore[rows.start], _newBefore[rows.end]),
   );
 
-  /// The rows that show [old] and [neu] (either may be null), from the
-  /// first such row to the last; null when both are null or empty.
-  ModelSpan? rowsOf({ModelSpan? old, ModelSpan? neu}) {
-    var start = -1;
-    var end = -1;
-    for (final (side, span) in [(PaneSide.old, old), (PaneSide.neu, neu)]) {
-      if (span == null || span.isEmpty) continue;
-      final s = rowOf(side, span.start);
-      final e = rowOf(side, span.end - 1) + 1;
-      if (start < 0 || s < start) start = s;
-      if (e > end) end = e;
+  /// The rows whose lines all lie in [old] and [neu] (either may be null),
+  /// for spans inside one unchanged region: the paired rows with both
+  /// lines in, then the longer side's rows with their line in. Sorted and
+  /// disjoint, at most two spans; empty when no row is.
+  List<ModelSpan> rowsWithin({ModelSpan? old, ModelSpan? neu}) {
+    final o = _rowsShowing(PaneSide.old, old);
+    final n = _rowsShowing(PaneSide.neu, neu);
+    // A region's paired rows come first, so a side's rows with no line of
+    // the other side are the tail of its rows.
+    final parts = [
+      if (o != null && n != null && o.overlaps(n))
+        ModelSpan(_max(o.start, n.start), _min(o.end, n.end)),
+      if (o != null)
+        ModelSpan(o.start + _newBefore[o.end] - _newBefore[o.start], o.end),
+      if (n != null)
+        ModelSpan(n.start + _oldBefore[n.end] - _oldBefore[n.start], n.end),
+    ]..sort((a, b) => a.start - b.start);
+    final out = <ModelSpan>[];
+    for (final p in parts) {
+      if (p.isEmpty) continue;
+      if (out.isNotEmpty && p.start <= out.last.end) {
+        final last = out.removeLast();
+        out.add(ModelSpan(last.start, _max(last.end, p.end)));
+      } else {
+        out.add(p);
+      }
     }
-    return start < 0 ? null : ModelSpan(start, end);
+    return out;
   }
+
+  ModelSpan? _rowsShowing(PaneSide side, ModelSpan? lines) =>
+      lines == null || lines.isEmpty
+      ? null
+      : ModelSpan(rowOf(side, lines.start), rowOf(side, lines.end - 1) + 1);
+
+  static int _max(int a, int b) => a > b ? a : b;
 
   static int _min(int a, int b) => a < b ? a : b;
 }
