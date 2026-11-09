@@ -49,6 +49,8 @@ final class DiffThemeData {
     required this.hoverAffordance,
     required this.syntax,
     this.ribbonBorder,
+    this.unifiedDeletedLine,
+    this.unifiedDeletedWord,
     this.fontFamily = 'JetBrains Mono',
     this.fontFamilyFallback = const ['Menlo', 'monospace'],
     this.fontSize = 13,
@@ -164,6 +166,14 @@ final class DiffThemeData {
 
   /// Deleted word tint.
   final Color deletedWord;
+
+  /// Deleted line tint in `UnifiedDiff`, where a removed line sits right
+  /// above its replacement; null (the default) uses [deletedLine].
+  final Color? unifiedDeletedLine;
+
+  /// Deleted word tint in `UnifiedDiff`; null (the default) uses
+  /// [deletedWord].
+  final Color? unifiedDeletedWord;
 
   /// Modified line tint.
   final Color modifiedLine;

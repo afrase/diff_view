@@ -4,6 +4,7 @@
 - `UnifiedRows` maps unified rows to old and new lines; `RowSelection` and `RowSelectionController` hold the unified selection.
 - `jumpToLine`, `viewportYOfLine` and `ensureLineVisible` act on the unified view when it is the one laid out. Switching views keeps the line in place.
 - `GutterMetrics.unified` and `DiffPaintResources.unifiedGutter` lay out the two-number gutter; `DiffPaneViewport` takes `unified`.
+- `DiffThemeData.unifiedDeletedLine` and `unifiedDeletedWord` tint removed lines in the unified view; unset, they're the side-by-side colours.
 - The example app has a Split/Unified switch.
 - `selectionChanges` and `geometryChanges` also fire for the unified view.
 - `DiffPane` is a `StatelessWidget`.

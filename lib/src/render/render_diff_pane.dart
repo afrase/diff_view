@@ -595,7 +595,7 @@ class RenderDiffPane extends RenderBox
       final kind = rows != null
           ? _unifiedKind(rows.kindAt(r))
           : line?.kind ?? _kindFromDocument(r);
-      final tint = _lineTint(kind);
+      final tint = _lineTint(kind, unified: rows != null);
       if (tint != null) {
         canvas.drawRect(
           Rect.fromLTWH(codeLeft, y, size.width - g.gutterWidth, lineHeight),
@@ -613,7 +613,8 @@ class RenderDiffPane extends RenderBox
       );
       final inner = line.inner;
       if (inner.isNotEmpty) {
-        wordPaint.color = _wordTint(kind) ?? theme.modifiedWord;
+        wordPaint.color =
+            _wordTint(kind, unified: rows != null) ?? theme.modifiedWord;
         for (var i = 0; i + 2 < inner.length; i += 3) {
           if (inner[i + 2] & innerChanged == 0) continue;
           final start = inner[i];
@@ -652,7 +653,7 @@ class RenderDiffPane extends RenderBox
         // The line's tint runs through the gutter, as in JetBrains IDEs.
         canvas.drawRect(
           Rect.fromLTWH(offset.dx, y, g.gutterWidth, lineHeight),
-          tintPaint..color = _lineTint(kind)!,
+          tintPaint..color = _lineTint(kind, unified: rows != null)!,
         );
         final glyph = res.marker(kind);
         canvas.drawParagraph(
@@ -814,21 +815,23 @@ class RenderDiffPane extends RenderBox
     UnifiedRowKind.inserted => LineKind.added,
   };
 
-  Color? _lineTint(LineKind kind) {
+  Color? _lineTint(LineKind kind, {required bool unified}) {
     final t = _resources.theme;
     return switch (kind) {
       LineKind.unchanged => null,
       LineKind.added => t.insertedLine,
+      LineKind.deleted when unified => t.unifiedDeletedLine ?? t.deletedLine,
       LineKind.deleted => t.deletedLine,
       LineKind.modified => t.modifiedLine,
     };
   }
 
-  Color? _wordTint(LineKind kind) {
+  Color? _wordTint(LineKind kind, {required bool unified}) {
     final t = _resources.theme;
     return switch (kind) {
       LineKind.unchanged => null,
       LineKind.added => t.insertedWord,
+      LineKind.deleted when unified => t.unifiedDeletedWord ?? t.deletedWord,
       LineKind.deleted => t.deletedWord,
       LineKind.modified => t.modifiedWord,
     };
