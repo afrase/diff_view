@@ -443,6 +443,7 @@ class RenderDiffPane extends RenderBox
     try {
       _offset.applyViewportDimension(size.height);
       _layoutInlays();
+      final maxExtent = math.max(0, _geometry.contentHeight - size.height);
       final anchor = _anchor;
       if (anchor != null) {
         _anchor = null;
@@ -450,13 +451,18 @@ class RenderDiffPane extends RenderBox
           for (final t in anchor) {
             final y = _targetY(t);
             if (y == null) continue;
-            final delta = y - t.y;
-            if (delta.abs() > 1e-9) _offset.correctBy(delta);
+            // Within the scroll range: content shorter than the viewport
+            // cannot hold the anchor, and must not overscroll and spring
+            // back.
+            final pixels = _offset.pixels;
+            final target = (pixels + y - t.y).clamp(0.0, maxExtent);
+            if ((target - pixels).abs() > 1e-9) {
+              _offset.correctBy(target - pixels);
+            }
             break;
           }
         }
       }
-      final maxExtent = math.max(0, _geometry.contentHeight - size.height);
       for (var i = 0; i < 10; i++) {
         if (_offset.applyContentDimensions(0, maxExtent.toDouble())) break;
       }

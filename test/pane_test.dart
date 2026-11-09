@@ -528,4 +528,20 @@ void main() {
     expect(watch.elapsedMilliseconds, lessThan(200));
     expect(c.resources.lines.length, lessThan(cached + 20));
   });
+
+  testWidgets('an inlay in a file shorter than the view does not scroll', (
+    tester,
+  ) async {
+    final h = await pumpHarness(
+      tester,
+      foldContext: -1,
+      diff: SyntheticDiff(const [Ins(8)]),
+    );
+    final c = h.controller
+      ..addInlay(const InlaySpec(id: 'x', side: PaneSide.neu, afterLine: 5));
+    await tester.pump();
+    await tester.pump();
+    expect(c.geometry(PaneSide.neu).inlayHeight(6), 60);
+    expect(h.pos(PaneSide.neu).pixels, 0);
+  });
 }
