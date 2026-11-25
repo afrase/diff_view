@@ -198,6 +198,35 @@ class _DiffScreenState extends State<DiffScreen> {
                   style: TextStyle(color: theme.text, fontSize: 13),
                 ),
                 const Spacer(),
+                // Select text in the code with the mouse (drag, double or
+                // triple click), or lines in the gutter; Cmd/Ctrl+C or
+                // this button copies it.
+                ListenableBuilder(
+                  listenable: controller.selectionChanges,
+                  builder: (context, _) {
+                    final label = _selectionLabel(controller);
+                    return Row(
+                      children: [
+                        if (label != null)
+                          Text(
+                            label,
+                            style: TextStyle(
+                              color: theme.gutterText,
+                              fontSize: 12,
+                            ),
+                          ),
+                        const SizedBox(width: 8),
+                        TextButton(
+                          onPressed: label == null
+                              ? null
+                              : controller.copySelection,
+                          child: const Text('Copy'),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+                const SizedBox(width: 12),
                 SegmentedButton<bool>(
                   segments: const [
                     ButtonSegment(value: false, label: Text('Split')),
@@ -229,4 +258,22 @@ class _DiffScreenState extends State<DiffScreen> {
       ],
     );
   }
+}
+
+/// What is selected, as the bar shows it (1-based), or null.
+String? _selectionLabel(DiffViewController c) {
+  final text = c.textSelection.value;
+  if (text != null) {
+    final where = switch (text.side) {
+      PaneSide.old => 'Old',
+      PaneSide.neu => 'New',
+      null => 'Unified',
+    };
+    final s = text.start;
+    final e = text.end;
+    return '$where ${s.line + 1}:${s.column + 1} to ${e.line + 1}:${e.column + 1}';
+  }
+  final lines = c.selection.value?.span ?? c.unifiedSelection.value?.span;
+  if (lines == null) return null;
+  return 'Lines ${lines.start + 1} to ${lines.end}';
 }
