@@ -8,6 +8,7 @@ A fast side-by-side and unified diff view for Flutter, modelled on the JetBrains
 - A unified (single-column) view of the same controller, for when one column reads better, such as a new file.
 - Word-level highlights inside changed lines, plus your own syntax colors.
 - Nested folding of unchanged regions ("… N unchanged lines").
+- Text selection in the code with the mouse (drag, double and triple click, Shift-click) with copy, as in an editor.
 - Line selection in the gutter (drag, Shift-click, Shift+arrows) with copy.
 - Inlays: put any widget between lines (review comments, notes) without the view jumping.
 - Self-painted rows with cached paragraphs, built for large files: on a 20,000-line diff, scrolling costs about 3 ms per frame (p95) on an M3 Pro.
@@ -56,6 +57,14 @@ UnifiedDiff(
 - An inlay of either side is drawn below the row of its line.
 - `jumpToLine`, `viewportYOfLine` and `ensureLineVisible` act on whichever view is laid out.
 - The gutter selection is `controller.unifiedSelection`, in rows. `controller.unifiedRows.linesIn(span)` gives the old and new lines it covers, and copy takes the shown text without markers.
+
+## Selecting and copying
+
+- Drag in the code to select text in one pane, or across the rows of the unified view as shown. Double click selects a word, triple click a line, Shift-click extends, and a click elsewhere in the view or Escape clears it. Dragging past the top or bottom edge scrolls.
+- Cmd/Ctrl+C copies the text as shown, each line followed by its own line end, without `+`/`-` markers or line numbers. Folded lines are left out; lines your `DiffLineSource` hasn't loaded are loaded for the copy.
+- A drag in the gutter still selects whole lines. There is one selection at a time, and `controller.copySelection()` copies whichever there is.
+- `controller.textSelection` is a `ValueListenable<CodeSelection?>` with the side (null in the unified view, where lines are rows), start and end as line and column, so you can show your own menu or handle keys yourself; `controller.textOf(selection)` gives its text and `controller.clearTextSelection()` clears it. `selectionChanges` fires for it too.
+- `DiffThemeData.textSelection` is its colour. To select only lines, pass `textSelectionEnabled: false` to the controller.
 
 ## Syntax highlighting
 

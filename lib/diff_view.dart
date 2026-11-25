@@ -1,8 +1,8 @@
 /// A side-by-side or unified diff view of one file, like JetBrains IDEs':
 /// self-painted rows with cached paragraphs, curved ribbons between two
 /// synced panes (or one column with both line numbers), word and syntax
-/// highlights, nested folds, inline inlays with scroll anchoring, and
-/// gutter line selection with copy.
+/// highlights, nested folds, inline inlays with scroll anchoring, text
+/// selection in the code and gutter line selection, with copy.
 ///
 /// Self-contained: it depends on Flutter only. Rows come from a
 /// [DiffLineSource] the host implements (paged from a backend, or in
