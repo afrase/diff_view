@@ -98,4 +98,82 @@ void main() {
     debugPrint('scroll p95: side by side $split µs, unified $unified µs');
     expect(unified, lessThan(split * 1.5 + 1000));
   });
+
+  // Text selection costs nothing per frame while nothing is selected, and
+  // a selection of the whole file paints only the rows on screen.
+  testWidgets('text selection does not slow scrolling', (tester) async {
+    tester.view
+      ..physicalSize = const Size(1600, 1200)
+      ..devicePixelRatio = 2;
+    addTearDown(tester.view.reset);
+    final d = hugeDiff();
+    final theme = DiffThemeData.light();
+    Future<int> run({
+      required bool unified,
+      required bool enabled,
+      bool selectAll = false,
+    }) async {
+      final c = DiffViewController(
+        document: d.document,
+        lines: d.source,
+        theme: theme,
+        captureNames: testCaptures,
+        foldContext: -1,
+        textSelectionEnabled: enabled,
+      );
+      if (selectAll) {
+        const start = CodePosition(0, 0);
+        final end = CodePosition(
+          unified ? c.unifiedRows.rowCount - 1 : 19999,
+          0,
+        );
+        c.textSelection.select(
+          unified
+              ? CodeSelection.unified(anchor: start, focus: end)
+              : CodeSelection(side: PaneSide.neu, anchor: start, focus: end),
+        );
+      }
+      Widget inlay(BuildContext context, InlaySpec spec) =>
+          const SizedBox(height: 60);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: unified
+              ? UnifiedDiff(controller: c, theme: theme, inlayBuilder: inlay)
+              : SideBySideDiff(
+                  controller: c,
+                  theme: theme,
+                  inlayBuilder: inlay,
+                ),
+        ),
+      );
+      final p95 = await scrollP95(
+        tester,
+        unified ? c.unifiedScroll : c.scroll(PaneSide.neu),
+      );
+      await tester.pumpWidget(const SizedBox());
+      c.dispose();
+      return p95;
+    }
+
+    Future<int> best({
+      required bool unified,
+      required bool enabled,
+      bool selectAll = false,
+    }) async => [
+      await run(unified: unified, enabled: enabled, selectAll: selectAll),
+      await run(unified: unified, enabled: enabled, selectAll: selectAll),
+    ].reduce((a, b) => a < b ? a : b);
+
+    for (final unified in [false, true]) {
+      final off = await best(unified: unified, enabled: false);
+      final idle = await best(unified: unified, enabled: true);
+      final all = await best(unified: unified, enabled: true, selectAll: true);
+      debugPrint(
+        'scroll p95 ${unified ? 'unified' : 'side by side'}: '
+        'off $off µs, nothing selected $idle µs, all selected $all µs',
+      );
+      expect(idle, lessThan(off * 1.5 + 1000));
+      expect(all, lessThan(off * 1.5 + 1000));
+    }
+  });
 }
