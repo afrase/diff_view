@@ -108,6 +108,56 @@ void main() {
       }
     });
 
+    group('offsetAt', () {
+      final a = builder.advance;
+
+      test('a monospace line: the nearest column boundary, clamped', () {
+        final layout = builder.build(DiffLine(line: 0, text: 'abcdef'));
+        expect(layout.offsetAt(-20, a), 0);
+        expect(layout.offsetAt(0.4 * a, a), 0);
+        expect(layout.offsetAt(0.6 * a, a), 1);
+        expect(layout.offsetAt(3.2 * a, a), 3);
+        expect(layout.offsetAt(40 * a, a), 6);
+        layout.dispose();
+      });
+
+      test('a tab is one offset: its nearer edge', () {
+        // '\tab': the tab spans columns 0..4, 'a' 4..5, 'b' 5..6.
+        final layout = builder.build(DiffLine(line: 0, text: '\tab'));
+        expect(layout.offsetAt(1.9 * a, a), 0);
+        expect(layout.offsetAt(2.1 * a, a), 1);
+        expect(layout.offsetAt(4.4 * a, a), 1);
+        expect(layout.offsetAt(4.6 * a, a), 2);
+        expect(layout.offsetAt(9 * a, a), 3);
+        layout.dispose();
+      });
+
+      test('wide and non-Latin-1 characters hit through the paragraph', () {
+        // Not monospace-safe: x comes from the laid-out glyphs.
+        const text = 'a中\tb';
+        final layout = builder.build(DiffLine(line: 0, text: text));
+        expect(layout.isMonospaceSafe, isFalse);
+        for (var o = 0; o < text.length; o++) {
+          final (x0, x1) = layout.xRange(o, o + 1, a);
+          expect(layout.offsetAt(x0 + (x1 - x0) * 0.2, a), o, reason: '$o');
+          expect(layout.offsetAt(x0 + (x1 - x0) * 0.8, a), o + 1);
+        }
+        expect(layout.offsetAt(layout.width + 50, a), text.length);
+        layout.dispose();
+      });
+
+      test('in an RTL run a hit lands next to the glyph under it', () {
+        const text = 'x = "שלום" + y';
+        final layout = builder.build(DiffLine(line: 0, text: text));
+        for (var o = 5; o < 9; o++) {
+          final (x0, x1) = layout.xRange(o, o + 1, a);
+          final hit = layout.offsetAt((x0 + x1) / 2, a);
+          expect(hit, inInclusiveRange(o, o + 1), reason: '$o');
+        }
+        layout.dispose();
+      });
+    });
+
     test('a long line lays out on one line at full width', () {
       final text = 'x' * 5000;
       final layout = builder.build(DiffLine(line: 0, text: text));

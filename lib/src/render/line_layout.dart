@@ -7,7 +7,7 @@ import 'package:diff_view/src/render/diff_theme.dart';
 
 /// A code line laid out for painting.
 final class LineLayout {
-  new _(this.paragraph, this._columns, this.isMonospaceSafe);
+  new _(this.paragraph, this._columns, this.isMonospaceSafe, this._length);
 
   /// The laid-out paragraph (tabs expanded).
   final ui.Paragraph paragraph;
@@ -18,6 +18,9 @@ final class LineLayout {
   /// Whether every character is one advance wide (printable ASCII and
   /// Latin-1), so a column's x is `column × advance`.
   final bool isMonospaceSafe;
+
+  // UTF-16 length of the original text.
+  final int _length;
 
   // x spans measured through the paragraph (lines that are not
   // monospace-safe), by `start << 32 | end` in expanded columns, so a word
@@ -33,6 +36,45 @@ final class LineLayout {
     if (c == null) return offset;
     if (offset <= 0) return 0;
     return c[offset < c.length ? offset : c.length - 1];
+  }
+
+  /// The original UTF-16 offset nearest to x [x] (from the start of the
+  /// text), for hit testing: the offset between the two characters closest
+  /// to [x], clamped to the text. A tab is one character, so a hit inside
+  /// one goes to its nearer edge. A monospace-safe line is measured as
+  /// columns of [advance]; any other line (wide or non-Latin-1 characters,
+  /// emoji, right-to-left runs) is hit through the laid-out paragraph, the
+  /// way [xSpans] measures it, so a hit in an RTL run lands next to the
+  /// glyph under it.
+  int offsetAt(double x, double advance) {
+    final c = _columns;
+    if (isMonospaceSafe) {
+      final col = x / advance;
+      if (c == null) return col.round().clamp(0, _length);
+      return _nearestOffset(c, col);
+    }
+    final p = paragraph
+        .getPositionForOffset(ui.Offset(x, paragraph.height / 2))
+        .offset;
+    if (c == null) return p.clamp(0, _length);
+    return _nearestOffset(c, p.toDouble());
+  }
+
+  // The original offset whose expanded column is nearest to [col].
+  int _nearestOffset(Int32List c, double col) {
+    if (col <= 0) return 0;
+    if (col >= c[_length]) return _length;
+    var lo = 0;
+    var hi = _length;
+    while (lo < hi) {
+      final mid = (lo + hi + 1) >> 1;
+      if (c[mid] <= col) {
+        lo = mid;
+      } else {
+        hi = mid - 1;
+      }
+    }
+    return (col - c[lo]) * 2 < c[lo + 1] - c[lo] ? lo : lo + 1;
   }
 
   /// The x extent of original UTF-16 offsets `[start, end)`: from the
@@ -140,7 +182,12 @@ final class LineLayoutBuilder {
     });
     if (cursor < expanded.length) b.addText(expanded.substring(cursor));
     final p = b.build()..layout(const ui.ParagraphConstraints(width: 10000000));
-    return LineLayout._(p, columns, _isMonospaceSafe(expanded));
+    return LineLayout._(
+      p,
+      columns,
+      _isMonospaceSafe(expanded),
+      line.text.length,
+    );
   }
 
   // Printable ASCII and Latin-1 only. Controls (C0, DEL, C1) and the soft
