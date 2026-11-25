@@ -324,6 +324,15 @@ void main() {
   });
 
   group('DiffThemeData', () {
+    test('both built-in themes have a text selection colour', () {
+      for (final t in [DiffThemeData.light(), DiffThemeData.dark()]) {
+        final c = t.textSelection;
+        expect(c, isNotNull);
+        expect(c, isNot(t.selection));
+        expect(t.textSelectionColor, c);
+      }
+    });
+
     test('line height snaps to physical pixels', () {
       final t = DiffThemeData.light();
       expect(t.lineHeightFor(2), 19); // 13 × 1.45 = 18.85 → 37.7 → 38 / 2

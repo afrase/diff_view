@@ -504,6 +504,7 @@ class _PaneViewState extends State<PaneView>
                     resources: _c.resources,
                     horizontalOffset: _c.horizontal,
                     unified: _m.unified,
+                    textSelection: _c.textSelection,
                     onPaint: (side, pixels) =>
                         _c.onPanePaint?.call(side, pixels),
                     children: [

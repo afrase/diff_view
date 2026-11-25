@@ -51,6 +51,7 @@ final class DiffThemeData {
     this.ribbonBorder,
     this.unifiedDeletedLine,
     this.unifiedDeletedWord,
+    this.textSelection,
     this.fontFamily = 'JetBrains Mono',
     this.fontFamilyFallback = const ['Menlo', 'monospace'],
     this.fontSize = 13,
@@ -81,6 +82,7 @@ final class DiffThemeData {
     dividerBackground: Color(0xFFF7F8FA),
     selection: Color(0x553D7EFF),
     selectionOverCap: Color(0x55E8A33D),
+    textSelection: Color(0xFFB3D7FF),
     foldPlaceholderBackground: Color(0xFFF0F2F5),
     foldPlaceholderText: Color(0xFF6F737A),
     loadingBar: Color(0xFFE6E8EB),
@@ -119,6 +121,7 @@ final class DiffThemeData {
     dividerBackground: Color(0xFF1E1F22),
     selection: Color(0x663D7EFF),
     selectionOverCap: Color(0x66E8A33D),
+    textSelection: Color(0xFF214283),
     foldPlaceholderBackground: Color(0xFF2B2D30),
     foldPlaceholderText: Color(0xFF8C8F96),
     loadingBar: Color(0xFF2B2D30),
@@ -202,6 +205,15 @@ final class DiffThemeData {
 
   /// Line selection band beyond the range cap.
   final Color selectionOverCap;
+
+  /// Text selection in the code, painted behind the text and over the
+  /// line and word tints; null uses [selection]. Both built-in themes set
+  /// it.
+  final Color? textSelection;
+
+  /// The colour the text selection is painted in: [textSelection], or
+  /// [selection] when that is null.
+  Color get textSelectionColor => textSelection ?? selection;
 
   /// Fold placeholder background.
   final Color foldPlaceholderBackground;

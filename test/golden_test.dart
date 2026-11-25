@@ -12,6 +12,7 @@ Future<DiffViewController> pumpGolden(
   WidgetTester tester,
   DiffThemeData theme, {
   bool unified = false,
+  CodeSelection? textSelection,
   List<Seg> segs = const [
     Eq(3),
     Mod(2, 3),
@@ -54,7 +55,9 @@ Future<DiffViewController> pumpGolden(
   if (d.neu.length > 5) {
     c.addInlay(const InlaySpec(id: 'thread', side: PaneSide.neu, afterLine: 5));
   }
-  if (unified) {
+  if (textSelection != null) {
+    c.textSelection.select(textSelection);
+  } else if (unified) {
     // The deleted rows of the first block.
     c.unifiedSelection
       ..start(3)
@@ -117,6 +120,47 @@ void main() {
       matchesGoldenFile('goldens/unified_dark.png'),
     );
   });
+
+  // A text selection from inside the first block, across its inlay and
+  // the inserted lines below: painted behind the text, over the line and
+  // word tints.
+  for (final dark in [false, true]) {
+    final name = dark ? 'dark' : 'light';
+    DiffThemeData theme() =>
+        dark ? DiffThemeData.dark() : DiffThemeData.light();
+
+    testWidgets('side-by-side text selection, $name', (tester) async {
+      await pumpGolden(
+        tester,
+        theme(),
+        textSelection: const CodeSelection(
+          side: PaneSide.neu,
+          anchor: CodePosition(3, 7),
+          focus: CodePosition(9, 6),
+        ),
+      );
+      await expectLater(
+        find.byType(SideBySideDiff),
+        matchesGoldenFile('goldens/side_by_side_text_selection_$name.png'),
+      );
+    });
+
+    testWidgets('unified text selection, $name', (tester) async {
+      await pumpGolden(
+        tester,
+        theme(),
+        unified: true,
+        textSelection: const CodeSelection.unified(
+          anchor: CodePosition(4, 6),
+          focus: CodePosition(11, 3),
+        ),
+      );
+      await expectLater(
+        find.byType(UnifiedDiff),
+        matchesGoldenFile('goldens/unified_text_selection_$name.png'),
+      );
+    });
+  }
 
   testWidgets('unified, an added file', (tester) async {
     final c = await pumpGolden(

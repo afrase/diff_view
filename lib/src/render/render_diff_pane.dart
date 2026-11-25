@@ -1,11 +1,13 @@
 import 'dart:math' as math;
 
+import 'package:diff_view/src/model/code_selection.dart';
 import 'package:diff_view/src/model/diff_document.dart';
 import 'package:diff_view/src/model/diff_line.dart';
 import 'package:diff_view/src/model/line_coords.dart';
 import 'package:diff_view/src/model/line_source.dart';
 import 'package:diff_view/src/model/pane_geometry.dart';
 import 'package:diff_view/src/model/unified_rows.dart';
+import 'package:diff_view/src/render/line_layout.dart';
 import 'package:diff_view/src/render/paint_resources.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/rendering.dart';
@@ -60,6 +62,7 @@ class DiffPaneViewport extends MultiChildRenderObjectWidget {
     required this.resources,
     required this.horizontalOffset,
     this.unified,
+    this.textSelection,
     this.anchorFraction = 1 / 3,
     this.onPaint,
     super.children,
@@ -91,6 +94,11 @@ class DiffPaneViewport extends MultiChildRenderObjectWidget {
   /// Horizontal scroll offset of the code (shared by both panes).
   final ValueListenable<double> horizontalOffset;
 
+  /// The text selection, painted behind the text of this pane's rows when
+  /// it is in this pane (its side, or a unified selection in a unified
+  /// view); null paints none.
+  final ValueListenable<CodeSelection?>? textSelection;
+
   /// Where the scroll anchor sits, as a fraction of the viewport height.
   final double anchorFraction;
 
@@ -107,6 +115,7 @@ class DiffPaneViewport extends MultiChildRenderObjectWidget {
     resources: resources,
     horizontalOffset: horizontalOffset,
     unified: unified,
+    textSelection: textSelection,
     anchorFraction: anchorFraction,
     onPaint: onPaint,
   );
@@ -122,6 +131,7 @@ class DiffPaneViewport extends MultiChildRenderObjectWidget {
       ..resources = resources
       ..horizontalOffset = horizontalOffset
       ..unified = unified
+      ..textSelection = textSelection
       ..anchorFraction = anchorFraction
       ..onPaint = onPaint;
   }
@@ -161,6 +171,7 @@ class RenderDiffPane extends RenderBox
     required this._resources,
     required ValueListenable<double> horizontalOffset,
     this._unified,
+    this._textSelection,
     this.anchorFraction = 1 / 3,
     this.onPaint,
   }) : _horizontal = horizontalOffset;
@@ -173,6 +184,7 @@ class RenderDiffPane extends RenderBox
   DiffPaintResources _resources;
   ValueListenable<double> _horizontal;
   UnifiedRows? _unified;
+  ValueListenable<CodeSelection?>? _textSelection;
 
   /// Paint probe.
   PanePaintObserver? onPaint;
@@ -190,6 +202,7 @@ class RenderDiffPane extends RenderBox
   final Paint _fill = Paint();
   final Paint _tint = Paint();
   final Paint _word = Paint();
+  final Paint _selected = Paint();
 
   /// Vertical scroll offset.
   ViewportOffset get offset => _offset;
@@ -264,6 +277,16 @@ class RenderDiffPane extends RenderBox
     markNeedsLayout();
   }
 
+  /// The text selection painted behind the text, or null.
+  ValueListenable<CodeSelection?>? get textSelection => _textSelection;
+  set textSelection(ValueListenable<CodeSelection?>? value) {
+    if (identical(value, _textSelection)) return;
+    if (attached) _textSelection?.removeListener(markNeedsPaint);
+    _textSelection = value;
+    if (attached) _textSelection?.addListener(markNeedsPaint);
+    markNeedsPaint();
+  }
+
   /// Anchor position as a fraction of the viewport height.
   double anchorFraction;
 
@@ -301,6 +324,7 @@ class RenderDiffPane extends RenderBox
     _offset.addListener(markNeedsPaint);
     _horizontal.addListener(markNeedsPaint);
     _lines.addListener(markNeedsPaint);
+    _textSelection?.addListener(markNeedsPaint);
     _attachGeometry();
   }
 
@@ -309,6 +333,7 @@ class RenderDiffPane extends RenderBox
     _offset.removeListener(markNeedsPaint);
     _horizontal.removeListener(markNeedsPaint);
     _lines.removeListener(markNeedsPaint);
+    _textSelection?.removeListener(markNeedsPaint);
     _detachGeometry();
     super.detach();
   }
@@ -583,6 +608,14 @@ class RenderDiffPane extends RenderBox
     final wordPaint = _word;
     final codeLeft = offset.dx + g.gutterWidth;
     final textX = offset.dx + g.codeX - h;
+    // The text selection, when it is in this pane: one test per frame,
+    // and only the visible rows it covers are painted.
+    var selected = _textSelection?.value;
+    if (selected != null && selected.side != (rows == null ? _side : null)) {
+      selected = null;
+    }
+    final selStart = selected?.start;
+    final selEnd = selected?.end;
     for (
       var r = _geometry.nextVisibleRow(first);
       r <= last && r < rowCount;
@@ -629,6 +662,15 @@ class RenderDiffPane extends RenderBox
             }
           }
         }
+      }
+      if (selStart != null &&
+          selEnd != null &&
+          r >= selStart.line &&
+          r <= selEnd.line) {
+        _paintSelected(canvas, layout, line.text.length, r, textX, y, (
+          selStart,
+          selEnd,
+        ));
       }
       canvas.drawParagraph(layout.paragraph, Offset(textX, y + res.textTop));
     }
@@ -751,6 +793,39 @@ class RenderDiffPane extends RenderBox
       number,
       Offset(right - number.maxIntrinsicWidth, y + _resources.textTop),
     );
+  }
+
+  // The part of row [row] the selection [range] covers, and the line end
+  // after it when the selection goes on to a later row.
+  void _paintSelected(
+    Canvas canvas,
+    LineLayout layout,
+    int length,
+    int row,
+    double textX,
+    double y,
+    (CodePosition, CodePosition) range,
+  ) {
+    final (start, end) = range;
+    final advance = _resources.advance;
+    final lh = _geometry.lineHeight;
+    final paint = _selected..color = _resources.theme.textSelectionColor;
+    final from = row == start.line ? math.min(start.column, length) : 0;
+    final to = row == end.line ? end.column.clamp(from, length) : length;
+    if (to > from) {
+      for (final (x0, x1) in layout.xSpans(from, to, advance)) {
+        canvas.drawRect(
+          Rect.fromLTRB(textX + x0, y, textX + x1, y + lh),
+          paint,
+        );
+      }
+    }
+    if (row != end.line) {
+      final x = layout.isMonospaceSafe
+          ? layout.columnOf(length) * advance
+          : layout.width;
+      canvas.drawRect(Rect.fromLTWH(textX + x, y, advance, lh), paint);
+    }
   }
 
   void _paintWord(Canvas canvas, double x0, double x1, double y, Paint p) {
