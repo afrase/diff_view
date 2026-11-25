@@ -14,6 +14,7 @@ import 'package:diff_view/diff_view.dart'
 
 export 'src/diff/myers.dart' show EditOp, myersDiff;
 export 'src/diff/text_diff.dart';
+export 'src/model/code_selection.dart' hide wordRangeAt;
 export 'src/model/diff_document.dart';
 export 'src/model/diff_line.dart';
 export 'src/model/fold_model.dart';
