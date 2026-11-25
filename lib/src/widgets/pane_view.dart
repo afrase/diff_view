@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:diff_view/src/model/code_selection.dart';
+import 'package:diff_view/src/model/diff_line.dart';
 import 'package:diff_view/src/model/inlays.dart';
 import 'package:diff_view/src/model/line_coords.dart';
 import 'package:diff_view/src/model/pane_geometry.dart';
@@ -79,6 +81,19 @@ sealed class PaneModel {
 
   /// Reports a painted selection overlay to the controller's probe.
   void didPaintSelection();
+
+  /// The side and model line that [row] shows.
+  (PaneSide, int) lineOfRow(int row);
+
+  /// A text selection in this column.
+  CodeSelection textSelection(CodePosition anchor, CodePosition focus);
+
+  /// The text selection when it is in this column, or null.
+  CodeSelection? get ownTextSelection {
+    final sel = controller.textSelection.value;
+    if (sel == null) return null;
+    return sel.side == (unified == null ? side : null) ? sel : null;
+  }
 }
 
 /// One pane of a side-by-side view.
@@ -157,6 +172,13 @@ final class SidePaneModel extends PaneModel {
       _c.onSelectionPaint?.call(side, _c.selection.value);
 
   @override
+  (PaneSide, int) lineOfRow(int row) => (side, row);
+
+  @override
+  CodeSelection textSelection(CodePosition anchor, CodePosition focus) =>
+      CodeSelection(side: side, anchor: anchor, focus: focus);
+
+  @override
   bool operator ==(Object other) =>
       other is SidePaneModel &&
       other.controller == controller &&
@@ -232,10 +254,21 @@ final class UnifiedPaneModel extends PaneModel {
   void clearSelection() => _c.unifiedSelection.clear();
 
   @override
-  Future<String?> copySelection() => _c.copyUnifiedSelection();
+  Future<String?> copySelection() => _c.copySelection();
 
   @override
   void didPaintSelection() {}
+
+  @override
+  (PaneSide, int) lineOfRow(int row) {
+    final rows = unified;
+    final side = rows.textSideAt(row);
+    return (side, rows.lineAt(side, row));
+  }
+
+  @override
+  CodeSelection textSelection(CodePosition anchor, CodePosition focus) =>
+      CodeSelection.unified(anchor: anchor, focus: focus);
 
   @override
   bool operator ==(Object other) =>
@@ -247,7 +280,9 @@ final class UnifiedPaneModel extends PaneModel {
 
 /// A scrollable diff column: the [DiffPaneViewport], the selection/hover
 /// overlay, gutter drag-select with autoscroll, Shift+click and Shift+↑/↓
-/// extension, fold placeholder clicks, horizontal scrolling and copy.
+/// extension, text selection in the code (drag, double and triple click,
+/// Shift+click, with autoscroll), fold placeholder clicks, horizontal
+/// scrolling and copy.
 /// [DiffPane] and `UnifiedDiff` show one each.
 class PaneView extends StatefulWidget {
   /// Creates the column of [model].
@@ -279,10 +314,21 @@ class _PaneViewState extends State<PaneView>
     with SingleTickerProviderStateMixin {
   late final Ticker _ticker = createTicker(_autoscrollTick);
   final ValueNotifier<int?> _hoverRow = ValueNotifier(null);
+  final ValueNotifier<MouseCursor> _cursor = ValueNotifier(MouseCursor.defer);
   FocusNode? _ownFocus;
-  bool _dragging = false;
-  double _pointerY = 0;
+  _Drag _drag = _Drag.none;
+  Offset _pointer = Offset.zero;
   Duration _lastTick = Duration.zero;
+  // Text drags: the unit (character, word or line) the drag started on,
+  // which stays selected whichever way the drag goes.
+  CodePosition _unitStart = const CodePosition(0, 0);
+  CodePosition _unitEnd = const CodePosition(0, 0);
+  // Clicks in a row at one place: 1, 2 (word) or 3 (line).
+  int _clicks = 0;
+  Offset _lastClick = Offset.zero;
+  Timer? _clickTimer;
+
+  double get _pointerY => _pointer.dy;
 
   PaneModel get _m => widget.model;
   DiffViewController get _c => widget.model.controller;
@@ -292,7 +338,9 @@ class _PaneViewState extends State<PaneView>
   @override
   void dispose() {
     _ticker.dispose();
+    _clickTimer?.cancel();
     _hoverRow.dispose();
+    _cursor.dispose();
     _ownFocus?.dispose();
     super.dispose();
   }
@@ -325,6 +373,149 @@ class _PaneViewState extends State<PaneView>
 
   bool _inGutter(Offset local) => local.dx < _m.gutter.gutterWidth;
 
+  /// Whether viewport point [local] is on the code of a row.
+  bool _onCode(Offset local) {
+    final p = _position;
+    final g = _geometry;
+    if (p == null || _inGutter(local)) return false;
+    final hit = g.index.hit(p.pixels + local.dy);
+    return hit.slot < g.rowCount &&
+        g.isRowVisible(hit.slot) &&
+        hit.dy >= g.index.extraAbove(hit.slot);
+  }
+
+  /// Whether viewport y [y] is on an inlay.
+  bool _onInlay(double y) {
+    final p = _position;
+    if (p == null) return false;
+    final hit = _geometry.index.hit(p.pixels + y);
+    return hit.dy < _geometry.shownInlayHeight(hit.slot);
+  }
+
+  DiffLine? _lineAtRow(int row) {
+    final (side, line) = _m.lineOfRow(row);
+    return _c.lines.lineAt(side, line);
+  }
+
+  int _lengthOfRow(int row) => _lineAtRow(row)?.text.length ?? 0;
+
+  /// The offset at viewport x [x] in [row].
+  int _columnAt(int row, double x) {
+    final res = _c.resources;
+    final codeX = x - _m.gutter.codeX + _c.horizontal.value;
+    final (side, number) = _m.lineOfRow(row);
+    final line = _c.lines.lineAt(side, number);
+    if (line == null) return math.max(0, (codeX / res.advance).round());
+    final layout = res.lines.getOrBuild(
+      side.index | (number << 1),
+      line,
+      () => res.layouts.build(line),
+    );
+    return layout.offsetAt(codeX, res.advance);
+  }
+
+  /// The code position under viewport point [local]. Off a row (an inlay,
+  /// a fold placeholder, past the last row) it is the end of the row above
+  /// when [downward], else the start of the row below.
+  CodePosition? _codePositionAt(Offset local, {required bool downward}) {
+    final p = _position;
+    final g = _geometry;
+    if (p == null || g.rowCount == 0) return null;
+    final hit = g.index.hit(p.pixels + local.dy);
+    final slot = hit.slot;
+    if (slot < g.rowCount &&
+        g.isRowVisible(slot) &&
+        hit.dy >= g.index.extraAbove(slot)) {
+      return CodePosition(slot, _columnAt(slot, local.dx));
+    }
+    final above = g.previousVisibleRow(math.min(slot, g.rowCount) - 1);
+    final below = slot < g.rowCount ? g.nextVisibleRow(slot) : g.rowCount;
+    if ((downward || below >= g.rowCount) && above >= 0) {
+      return CodePosition(above, _lengthOfRow(above));
+    }
+    if (below < g.rowCount) return CodePosition(below, 0);
+    return null;
+  }
+
+  /// The word or line around [pos], by the click count.
+  (CodePosition, CodePosition) _unitAt(CodePosition pos) {
+    final row = pos.line;
+    if (_clicks >= 3) {
+      final next = _geometry.nextVisibleRow(row + 1);
+      return (
+        CodePosition(row, 0),
+        next < _geometry.rowCount
+            ? CodePosition(next, 0)
+            : CodePosition(row, _lengthOfRow(row)),
+      );
+    }
+    if (_clicks == 2) {
+      final (s, e) = wordRangeAt(_lineAtRow(row)?.text ?? '', pos.column);
+      return (CodePosition(row, s), CodePosition(row, e));
+    }
+    return (pos, pos);
+  }
+
+  void _countClick(Offset local) {
+    final again =
+        (_clickTimer?.isActive ?? false) &&
+        (local - _lastClick).distance <= kDoubleTapSlop;
+    _clicks = again ? math.min(_clicks + 1, 3) : 1;
+    _lastClick = local;
+    _clickTimer?.cancel();
+    _clickTimer = Timer(kDoubleTapTimeout, () {});
+  }
+
+  void _startTextDrag(Offset local) {
+    if (_onInlay(local.dy)) return;
+    final pos = _codePositionAt(local, downward: true);
+    if (pos == null) return;
+    final current = _m.ownTextSelection;
+    if (HardwareKeyboard.instance.isShiftPressed && current != null) {
+      _clicks = 1;
+      _clickTimer?.cancel();
+      _unitStart = current.anchor;
+      _unitEnd = current.anchor;
+      _c.textSelection.select(_m.textSelection(current.anchor, pos));
+    } else {
+      _countClick(local);
+      final (start, end) = _unitAt(pos);
+      _unitStart = start;
+      _unitEnd = end;
+      // A click clears every selection; a double or triple click selects
+      // its unit.
+      _c.textSelection.select(_m.textSelection(start, end));
+      _c.selection.clear();
+      _c.unifiedSelection.clear();
+    }
+    _drag = _Drag.text;
+    _pointer = local;
+  }
+
+  void _updateTextFocus() {
+    final p = _position;
+    final h = p?.viewportDimension ?? 0;
+    if (p == null || h <= 0) return;
+    final y = _pointerY.clamp(0.0, h - 0.01);
+    final hit = _geometry.index.hit(p.pixels + y).slot;
+    final downward =
+        _overshoot() > 0 || (_pointerY >= 0 && hit > _unitStart.line);
+    var pos = _codePositionAt(Offset(_pointer.dx, y), downward: downward);
+    if (pos == null) return;
+    // Past the top or bottom of the file: its first or last character.
+    if (_pointerY < 0 && p.pixels <= p.minScrollExtent) {
+      pos = CodePosition(pos.line, 0);
+    } else if (_pointerY > h && p.pixels >= p.maxScrollExtent) {
+      pos = CodePosition(pos.line, _lengthOfRow(pos.line));
+    }
+    final (start, end) = _unitAt(pos);
+    _c.textSelection.select(
+      pos.compareTo(_unitStart) < 0
+          ? _m.textSelection(_unitEnd, start)
+          : _m.textSelection(_unitStart, end),
+    );
+  }
+
   void _onPointerDown(PointerDownEvent e) {
     _m.makeMaster();
     if (e.kind != PointerDeviceKind.mouse || e.buttons != kPrimaryButton) {
@@ -342,24 +533,29 @@ class _PaneViewState extends State<PaneView>
     if (region >= 0 &&
         y >= placeholderTop &&
         y < placeholderTop + _geometry.placeholderHeight) {
-      _c.toggleFold(region, all: HardwareKeyboard.instance.isAltPressed);
+      _c
+        ..clearTextSelection()
+        ..toggleFold(region, all: HardwareKeyboard.instance.isAltPressed);
       return;
     }
-    if (!_inGutter(local)) return;
+    if (!_inGutter(local)) {
+      if (_c.textSelectionEnabled) _startTextDrag(local);
+      return;
+    }
     final row = _rowAt(local.dy, downward: true);
     if (HardwareKeyboard.instance.isShiftPressed) {
       _m.shiftClick(row);
     } else {
       _m.startSelection(row);
     }
-    _dragging = true;
-    _pointerY = local.dy;
+    _drag = _Drag.lines;
+    _pointer = local;
   }
 
   void _onPointerMove(PointerMoveEvent e) {
-    if (!_dragging) return;
-    _pointerY = e.localPosition.dy;
-    _updateDragFocus();
+    if (_drag == _Drag.none) return;
+    _pointer = e.localPosition;
+    _updateFocus();
     final overshoot = _overshoot();
     if (overshoot != 0 && !_ticker.isActive) {
       _lastTick = Duration.zero;
@@ -370,15 +566,27 @@ class _PaneViewState extends State<PaneView>
   }
 
   void _onPointerUp(PointerEvent e) {
-    if (!_dragging) return;
-    _dragging = false;
+    if (_drag == _Drag.none) return;
+    _drag = _Drag.none;
     if (_ticker.isActive) _ticker.stop();
   }
 
   void _onPointerHover(PointerHoverEvent e) {
-    _hoverRow.value = _inGutter(e.localPosition)
-        ? _rowAt(e.localPosition.dy, downward: true)
+    final local = e.localPosition;
+    _hoverRow.value = _inGutter(local)
+        ? _rowAt(local.dy, downward: true)
         : null;
+    _cursor.value = _c.textSelectionEnabled && _onCode(local)
+        ? SystemMouseCursors.text
+        : MouseCursor.defer;
+  }
+
+  void _updateFocus() {
+    if (_drag == _Drag.text) {
+      _updateTextFocus();
+    } else {
+      _updateDragFocus();
+    }
   }
 
   void _onPointerSignal(PointerSignalEvent e) {
@@ -419,7 +627,7 @@ class _PaneViewState extends State<PaneView>
 
   void _autoscrollTick(Duration elapsed) {
     final p = _position;
-    if (p == null || !_dragging) {
+    if (p == null || _drag == _Drag.none) {
       _ticker.stop();
       return;
     }
@@ -436,7 +644,7 @@ class _PaneViewState extends State<PaneView>
       p.maxScrollExtent,
     );
     if (target != p.pixels) p.jumpTo(target);
-    _updateDragFocus();
+    _updateFocus();
   }
 
   KeyEventResult _onKey(FocusNode node, KeyEvent e) {
@@ -455,14 +663,18 @@ class _PaneViewState extends State<PaneView>
     }
     if ((keys.isMetaPressed || keys.isControlPressed) &&
         key == LogicalKeyboardKey.keyC) {
-      // Without a line selection the shortcut is not ours: an ancestor's
-      // copy (a code-area text selection) must still see it.
-      if (_m.selection == null) return KeyEventResult.ignored;
+      // Without a selection the shortcut is not ours: an ancestor's copy
+      // must still see it.
+      if (_m.selection == null && _c.textSelection.value == null) {
+        return KeyEventResult.ignored;
+      }
       unawaited(_m.copySelection());
       return KeyEventResult.handled;
     }
-    if (key == LogicalKeyboardKey.escape && _m.selection != null) {
+    if (key == LogicalKeyboardKey.escape &&
+        (_m.selection != null || _c.textSelection.value != null)) {
       _m.clearSelection();
+      _c.clearTextSelection();
       return KeyEventResult.handled;
     }
     return KeyEventResult.ignored;
@@ -483,8 +695,16 @@ class _PaneViewState extends State<PaneView>
         onPointerSignal: _onPointerSignal,
         onPointerPanZoomStart: (_) => _m.makeMaster(),
         onPointerPanZoomUpdate: _onPanZoomUpdate,
-        child: MouseRegion(
-          onExit: (_) => _hoverRow.value = null,
+        child: ValueListenableBuilder<MouseCursor>(
+          valueListenable: _cursor,
+          builder: (context, cursor, child) => MouseRegion(
+            cursor: cursor,
+            onExit: (_) {
+              _hoverRow.value = null;
+              _cursor.value = MouseCursor.defer;
+            },
+            child: child,
+          ),
           child: Stack(
             fit: StackFit.expand,
             children: [
@@ -535,6 +755,8 @@ class _PaneViewState extends State<PaneView>
     );
   }
 }
+
+enum _Drag { none, lines, text }
 
 /// Paints the line selection band and the hover '+' affordance above the
 /// rows, on its own layer so pointer moves never repaint text.

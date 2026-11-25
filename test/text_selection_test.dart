@@ -1,5 +1,9 @@
+import 'dart:ui' show PointerDeviceKind;
+
 import 'package:diff_view/diff_view.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -309,5 +313,413 @@ void main() {
     c.unifiedSelection.start(0);
     c.selection.clear();
     expect(await c.copySelection(), '${d.neu[0].text}\n');
+  });
+
+  for (final unified in [false, true]) {
+    group(unified ? 'unified view' : 'side-by-side view', () {
+      viewTests(unified: unified);
+    });
+  }
+}
+
+/// A view of the golden diff (a changed block, a fold, a deletion) with
+/// helpers that point at code in the new pane or the unified column.
+final class View {
+  new(this.tester, this.c, this.d, {required this.unified});
+
+  final WidgetTester tester;
+  final DiffViewController c;
+  final SyntheticDiff d;
+  final bool unified;
+
+  PaneGeometry get g => unified ? c.unifiedGeometry : c.geometry(PaneSide.neu);
+
+  ScrollPosition get position =>
+      (unified ? c.unifiedScroll : c.scroll(PaneSide.neu)).position;
+
+  GutterMetrics get gutter =>
+      unified ? c.resources.unifiedGutter : c.resources.gutter;
+
+  Finder get pane =>
+      unified ? find.byType(UnifiedDiff) : find.byType(DiffPane).last;
+
+  /// The row that shows new line [line].
+  int rowOfNew(int line) =>
+      unified ? c.unifiedRows.rowOf(PaneSide.neu, line) : line;
+
+  /// The text [row] shows.
+  String text(int row) {
+    if (!unified) return d.neu[row].text;
+    final rows = c.unifiedRows;
+    final side = rows.textSideAt(row);
+    final line = rows.lineAt(side, row);
+    return (side == PaneSide.old ? d.old : d.neu)[line].text;
+  }
+
+  /// A selection in this view.
+  CodeSelection selection(CodePosition anchor, CodePosition focus) => unified
+      ? CodeSelection.unified(anchor: anchor, focus: focus)
+      : CodeSelection(side: PaneSide.neu, anchor: anchor, focus: focus);
+
+  /// The global point of [column] in [row]. Every synthetic line starts
+  /// with a tab (four columns); the test font is one advance a glyph.
+  Offset at(int row, int column) {
+    final col = column == 0 ? 0 : column + 3;
+    final a = c.resources.advance;
+    return tester.getTopLeft(pane) +
+        Offset(
+          gutter.codeX + col * a + 0.5,
+          g.topOfRow(row) - position.pixels + g.lineHeight / 2,
+        );
+  }
+
+  /// A point in the gutter of [row].
+  Offset gutterAt(int row) =>
+      tester.getTopLeft(pane) +
+      Offset(
+        gutter.numberRight - 4,
+        g.topOfRow(row) - position.pixels + g.lineHeight / 2,
+      );
+
+  Future<TestGesture> down(Offset at) async {
+    final gesture = await tester.startGesture(
+      at,
+      kind: PointerDeviceKind.mouse,
+    );
+    await tester.pump();
+    return gesture;
+  }
+
+  Future<void> click(Offset at) async {
+    final gesture = await down(at);
+    await gesture.up();
+    await tester.pump();
+  }
+
+  Future<void> drag(Offset from, Offset to) async {
+    final gesture = await down(from);
+    await gesture.moveTo(to);
+    await tester.pump();
+    await gesture.up();
+    await tester.pump();
+  }
+
+  /// Lets the multi-click time run out.
+  Future<void> wait() => tester.pump(const Duration(milliseconds: 500));
+
+  Future<void> key(LogicalKeyboardKey key, {bool meta = false}) async {
+    if (meta) await tester.sendKeyDownEvent(LogicalKeyboardKey.metaLeft);
+    await tester.sendKeyEvent(key);
+    if (meta) await tester.sendKeyUpEvent(LogicalKeyboardKey.metaLeft);
+    await tester.pump();
+  }
+
+  Future<void> shiftClick(Offset at) async {
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+    await click(at);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.pump();
+  }
+}
+
+Future<View> pumpView(
+  WidgetTester tester, {
+  required bool unified,
+  bool enabled = true,
+  List<Seg> segs = const [
+    Eq(3),
+    Mod(2, 3),
+    Eq(2),
+    Ins(2),
+    Eq(30),
+    Del(3),
+    Eq(4),
+    Mod(1, 1),
+    Eq(3),
+  ],
+}) async {
+  tester.view
+    ..physicalSize = const Size(1600, 1200)
+    ..devicePixelRatio = 2;
+  addTearDown(tester.view.reset);
+  final d = SyntheticDiff(segs);
+  final c = DiffViewController(
+    document: d.document,
+    lines: d.source,
+    theme: DiffThemeData.light(),
+    captureNames: testCaptures,
+    textSelectionEnabled: enabled,
+  );
+  addTearDown(c.dispose);
+  final theme = DiffThemeData.light();
+  Widget inlay(BuildContext context, InlaySpec spec) =>
+      SizedBox(height: 60, child: Text('inlay ${spec.id}'));
+  await tester.pumpWidget(
+    MaterialApp(
+      home: Scaffold(
+        body: unified
+            ? UnifiedDiff(controller: c, theme: theme, inlayBuilder: inlay)
+            : SideBySideDiff(controller: c, theme: theme, inlayBuilder: inlay),
+      ),
+    ),
+  );
+  await tester.pump();
+  return View(tester, c, d, unified: unified);
+}
+
+void viewTests({required bool unified}) {
+  testWidgets('a drag selects by character across lines; Cmd+C copies', (
+    tester,
+  ) async {
+    final clipboard = mockClipboard(tester);
+    final v = await pumpView(tester, unified: unified);
+    final c = v.c;
+    c.selection.start(PaneSide.neu, 0);
+    final gesture = await v.down(v.at(1, 2));
+    expect(c.selection.value, isNull, reason: 'a text drag clears lines');
+    expect(c.textSelection.value, isNull, reason: 'nothing dragged yet');
+    await gesture.moveTo(v.at(2, 6));
+    await tester.pump();
+    expect(
+      c.textSelection.value,
+      v.selection(const CodePosition(1, 2), const CodePosition(2, 6)),
+    );
+    // Back up above the anchor: the focus follows.
+    await gesture.moveTo(v.at(0, 3));
+    await tester.pump();
+    await gesture.up();
+    await tester.pump();
+    final sel = c.textSelection.value!;
+    expect(sel.anchor, const CodePosition(1, 2));
+    expect(sel.focus, const CodePosition(0, 3));
+    await v.key(LogicalKeyboardKey.keyC, meta: true);
+    expect(
+      clipboard(),
+      '${v.text(0).substring(3)}\n${v.text(1).substring(0, 2)}',
+    );
+  });
+
+  testWidgets('a double click selects a word, a triple click a line', (
+    tester,
+  ) async {
+    final clipboard = mockClipboard(tester);
+    final v = await pumpView(tester, unified: unified);
+    final c = v.c;
+    // `\tfunc f("same 0")`: offsets 1 to 5 are `func`.
+    await v.click(v.at(0, 3));
+    expect(c.textSelection.value, isNull);
+    await v.click(v.at(0, 3));
+    expect(
+      c.textSelection.value,
+      v.selection(const CodePosition(0, 1), const CodePosition(0, 5)),
+    );
+    await v.click(v.at(0, 3));
+    expect(
+      c.textSelection.value,
+      v.selection(const CodePosition(0, 0), const CodePosition(1, 0)),
+    );
+    expect(await c.copySelection(), '${v.text(0)}\n');
+    expect(clipboard(), '${v.text(0)}\n');
+
+    // Too late for a double click: a click clears it.
+    await v.wait();
+    await v.click(v.at(2, 3));
+    await v.wait();
+    await v.click(v.at(2, 3));
+    expect(c.textSelection.value, isNull);
+
+    // A drag after a double click extends by words.
+    await v.wait();
+    await v.click(v.at(1, 3));
+    final gesture = await v.down(v.at(1, 3));
+    await gesture.moveTo(v.at(2, 10));
+    await tester.pump();
+    await gesture.up();
+    await tester.pump();
+    // `\tfunc f("same 2")`: offset 10 is in `same` (9 to 13).
+    expect(
+      c.textSelection.value,
+      v.selection(const CodePosition(1, 1), const CodePosition(2, 13)),
+    );
+  });
+
+  testWidgets('shift-click extends; a click elsewhere or Escape clears', (
+    tester,
+  ) async {
+    final v = await pumpView(tester, unified: unified);
+    final c = v.c;
+    await v.drag(v.at(0, 2), v.at(0, 4));
+    await v.shiftClick(v.at(2, 5));
+    expect(
+      c.textSelection.value,
+      v.selection(const CodePosition(0, 2), const CodePosition(2, 5)),
+    );
+    await v.wait();
+    await v.click(v.at(1, 1));
+    expect(c.textSelection.value, isNull);
+
+    await v.drag(v.at(0, 2), v.at(1, 4));
+    expect(c.textSelection.value, isNotNull);
+    await v.key(LogicalKeyboardKey.escape);
+    expect(c.textSelection.value, isNull);
+
+    // A gutter click starts a line selection and clears the text one.
+    await v.drag(v.at(0, 2), v.at(1, 4));
+    await v.wait();
+    await v.click(v.gutterAt(2));
+    expect(c.textSelection.value, isNull);
+    if (unified) {
+      expect(c.unifiedSelection.value, isNotNull);
+    } else {
+      expect(c.selection.value, isNotNull);
+    }
+    // And a text drag clears the line selection.
+    await v.wait();
+    await v.drag(v.at(0, 2), v.at(1, 4));
+    expect(c.selection.value, isNull);
+    expect(c.unifiedSelection.value, isNull);
+    expect(c.textSelection.value, isNotNull);
+  });
+
+  if (!unified) {
+    testWidgets('a click in the other pane clears it', (tester) async {
+      final v = await pumpView(tester, unified: false);
+      await v.drag(v.at(0, 2), v.at(1, 4));
+      expect(v.c.textSelection.value, isNotNull);
+      final old = tester.getTopLeft(find.byType(DiffPane).first);
+      await v.click(old + const Offset(200, 30));
+      expect(v.c.textSelection.value, isNull);
+    });
+  }
+
+  testWidgets('dragging past the bottom edge scrolls', (tester) async {
+    final v = await pumpView(
+      tester,
+      unified: unified,
+      segs: const [Mod(1, 1), Eq(200), Mod(1, 1)],
+    );
+    final c = v.c;
+    c.folds.expandAll(0);
+    await tester.pump();
+    v.position.jumpTo(0);
+    await tester.pump();
+    final gesture = await v.down(v.at(1, 2));
+    final bottom = tester.getBottomLeft(v.pane);
+    await gesture.moveTo(Offset(v.at(1, 4).dx, bottom.dy + 20));
+    for (var i = 0; i < 100 && v.position.pixels < 400; i++) {
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+    expect(v.position.pixels, greaterThanOrEqualTo(400));
+    final focus = c.textSelection.value!.focus;
+    expect(
+      v.g.topOfRow(focus.line) - v.position.pixels,
+      greaterThan(v.position.viewportDimension - 2 * v.g.lineHeight),
+      reason: 'the focus follows the scroll to the bottom edge',
+    );
+    await gesture.up();
+    await tester.pump();
+    expect(c.textSelection.value!.anchor, const CodePosition(1, 2));
+  });
+
+  testWidgets('a selection across a fold copies only what is shown', (
+    tester,
+  ) async {
+    mockClipboard(tester);
+    final v = await pumpView(tester, unified: unified);
+    final fold = v.g.hiddenSpans.first;
+    final above = fold.start - 1;
+    final below = fold.end;
+    await v.drag(v.at(above, 2), v.at(below, 4));
+    expect(
+      v.c.textSelection.value,
+      v.selection(CodePosition(above, 2), CodePosition(below, 4)),
+    );
+    final text = await v.c.copySelection();
+    expect(
+      text,
+      '${v.text(above).substring(2)}\n${v.text(below).substring(0, 4)}',
+    );
+  });
+
+  testWidgets('a selection passes over an inlay in a change', (tester) async {
+    mockClipboard(tester);
+    final v = await pumpView(tester, unified: unified);
+    // New lines 3 to 5 are the first change; the inlay sits after line 4.
+    final c = v.c
+      ..addInlay(const InlaySpec(id: 'note', side: PaneSide.neu, afterLine: 4));
+    await tester.pump();
+    await tester.pump();
+    final r3 = v.rowOfNew(3);
+    final r4 = v.rowOfNew(4);
+    final r5 = v.rowOfNew(5);
+    final inlay = tester.getCenter(find.text('inlay note'));
+    final gesture = await v.down(v.at(r3, 2));
+    await gesture.moveTo(Offset(v.at(r3, 2).dx, inlay.dy));
+    await tester.pump();
+    expect(
+      c.textSelection.value!.focus,
+      CodePosition(r4, v.text(r4).length),
+      reason: 'over the inlay the focus is the end of the row above',
+    );
+    await gesture.moveTo(v.at(r5, 4));
+    await tester.pump();
+    await gesture.up();
+    await tester.pump();
+    expect(c.textSelection.value!.focus, CodePosition(r5, 4));
+    final text = await c.copySelection();
+    expect(
+      text,
+      '${v.text(r3).substring(2)}\n${v.text(r4)}\n'
+      '${v.text(r5).substring(0, 4)}',
+    );
+    expect(text, isNot(contains('inlay')));
+
+    // A click on the inlay neither starts nor clears a selection.
+    await v.wait();
+    await v.click(inlay);
+    expect(c.textSelection.value, isNotNull);
+  });
+
+  testWidgets('a text cursor over code, as before over the gutter', (
+    tester,
+  ) async {
+    final v = await pumpView(tester, unified: unified);
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    addTearDown(mouse.removePointer);
+    await mouse.addPointer(location: v.gutterAt(1));
+    await tester.pump();
+    final tracker = RendererBinding.instance.mouseTracker;
+    expect(tracker.debugDeviceActiveCursor(1), SystemMouseCursors.basic);
+    await mouse.moveTo(v.at(1, 3));
+    await tester.pump();
+    expect(tracker.debugDeviceActiveCursor(1), SystemMouseCursors.text);
+    await mouse.moveTo(v.gutterAt(2));
+    await tester.pump();
+    expect(tracker.debugDeviceActiveCursor(1), SystemMouseCursors.basic);
+  });
+
+  testWidgets('with text selection off, code takes no selection', (
+    tester,
+  ) async {
+    final v = await pumpView(tester, unified: unified, enabled: false);
+    final c = v.c;
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await mouse.addPointer(location: v.gutterAt(1));
+    await mouse.moveTo(v.at(1, 3));
+    await tester.pump();
+    expect(
+      RendererBinding.instance.mouseTracker.debugDeviceActiveCursor(1),
+      SystemMouseCursors.basic,
+    );
+    await mouse.removePointer();
+    await v.drag(v.at(0, 2), v.at(1, 4));
+    expect(c.textSelection.value, isNull);
+    await v.click(v.at(0, 3));
+    await v.click(v.at(0, 3));
+    expect(c.textSelection.value, isNull);
+    // The gutter still selects lines.
+    await v.wait();
+    await v.click(v.gutterAt(2));
+    expect(unified ? c.unifiedSelection.value : c.selection.value, isNotNull);
   });
 }
