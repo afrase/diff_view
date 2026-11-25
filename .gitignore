@@ -3,3 +3,4 @@ build/
 .packages
 pubspec.lock
 .flutter-plugins*
+test/failures/
