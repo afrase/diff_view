@@ -282,6 +282,49 @@ void main() {
       ].length;
       expect('\n'.allMatches(unified).length, count - 1);
     });
+
+    test('a copy across a fold loads only the shown lines', () async {
+      final d = SyntheticDiff(const [Mod(1, 1), Eq(400), Mod(1, 1)]);
+      final source = PagedSource(d.old, d.neu);
+      final c = controllerOf(d, foldContext: 2, lines: source);
+      addTearDown(c.dispose);
+      bool anyHidden(PaneGeometry g, PaneSide side, int Function(int) rowOf) =>
+          source.loads.any(
+            (load) =>
+                load.$1 == side &&
+                [for (var l = load.$2.start; l < load.$2.end; l++) l]
+                    .any((l) => !g.isRowVisible(rowOf(l))),
+          );
+
+      final g = c.geometry(PaneSide.neu);
+      final text = await c.textOf(
+        CodeSelection(
+          side: PaneSide.neu,
+          anchor: const CodePosition(0, 0),
+          focus: CodePosition(g.rowCount - 1, 2),
+        ),
+      );
+      expect(text, isNot(contains('same 200')));
+      expect(anyHidden(g, PaneSide.neu, (l) => l), isFalse);
+
+      source.loads.clear();
+      final rows = c.unifiedRows;
+      final u = c.unifiedGeometry;
+      await c.textOf(
+        CodeSelection.unified(
+          anchor: const CodePosition(0, 0),
+          focus: CodePosition(rows.rowCount - 1, 2),
+        ),
+      );
+      expect(source.loads, isNotEmpty);
+      for (final side in PaneSide.values) {
+        expect(
+          anyHidden(u, side, (l) => rows.rowOf(side, l)),
+          isFalse,
+          reason: 'no hidden ${side.name} line is loaded',
+        );
+      }
+    });
   });
 
   testWidgets('copySelection copies whichever selection there is', (

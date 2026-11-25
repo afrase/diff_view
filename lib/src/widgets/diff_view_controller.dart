@@ -604,31 +604,34 @@ class DiffViewController extends ChangeNotifier {
     final side = selection.side;
     // The rows shown, with the line each one shows.
     final shown = <(int, DiffLine)>[];
+    // Each run of shown rows is loaded on its own, so a paging source is
+    // never asked for the lines a fold hides.
     if (side != null) {
-      final g = geometry(side);
-      final loaded = await lines.load(side, span);
-      for (var r = span.start; r < span.end; r++) {
-        if (g.isRowVisible(r)) shown.add((r, loaded[r - span.start]));
+      for (final run in _shownRuns(geometry(side), span)) {
+        final loaded = await lines.load(side, run);
+        for (var r = run.start; r < run.end; r++) {
+          shown.add((r, loaded[r - run.start]));
+        }
       }
     } else {
       final rows = unifiedRows;
-      final g = unifiedGeometry;
-      final spans = rows.linesIn(span);
-      final old = spans.old.isEmpty
-          ? const <DiffLine>[]
-          : await lines.load(PaneSide.old, spans.old);
-      final neu = spans.neu.isEmpty
-          ? const <DiffLine>[]
-          : await lines.load(PaneSide.neu, spans.neu);
-      for (var r = span.start; r < span.end; r++) {
-        if (!g.isRowVisible(r)) continue;
-        final n = rows.newLineAt(r);
-        shown.add((
-          r,
-          n >= 0
-              ? neu[n - spans.neu.start]
-              : old[rows.oldLineAt(r) - spans.old.start],
-        ));
+      for (final run in _shownRuns(unifiedGeometry, span)) {
+        final spans = rows.linesIn(run);
+        final old = spans.old.isEmpty
+            ? const <DiffLine>[]
+            : await lines.load(PaneSide.old, spans.old);
+        final neu = spans.neu.isEmpty
+            ? const <DiffLine>[]
+            : await lines.load(PaneSide.neu, spans.neu);
+        for (var r = run.start; r < run.end; r++) {
+          final n = rows.newLineAt(r);
+          shown.add((
+            r,
+            n >= 0
+                ? neu[n - spans.neu.start]
+                : old[rows.oldLineAt(r) - spans.old.start],
+          ));
+        }
       }
     }
     final out = StringBuffer();
@@ -647,6 +650,21 @@ class DiffViewController extends ChangeNotifier {
       out.write(terminator);
     }
     return out.toString();
+  }
+
+  /// The runs of [span]'s rows that [g] shows, in order: [span] split
+  /// around the spans a fold hides.
+  static List<ModelSpan> _shownRuns(PaneGeometry g, ModelSpan span) {
+    final runs = <ModelSpan>[];
+    var from = span.start;
+    for (final hidden in g.hiddenSpans) {
+      if (hidden.end <= from) continue;
+      if (hidden.start >= span.end) break;
+      if (hidden.start > from) runs.add(ModelSpan(from, hidden.start));
+      from = hidden.end;
+    }
+    if (from < span.end) runs.add(ModelSpan(from, span.end));
+    return runs;
   }
 
   /// Re-aligns the slave pane to the master now.
