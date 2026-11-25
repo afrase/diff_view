@@ -125,7 +125,8 @@ class DiffViewController extends ChangeNotifier {
     if (!value) textSelection.clear();
   }
 
-  /// Clears the text selection.
+  /// Clears the text selection, and the place of the last click in the
+  /// code that a Shift-click would extend from.
   void clearTextSelection() => textSelection.clear();
 
   /// Horizontal code offset, shared by both panes.

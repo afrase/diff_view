@@ -60,7 +60,7 @@ UnifiedDiff(
 
 ## Selecting and copying
 
-- Drag in the code to select text in one pane, or across the rows of the unified view as shown. Double click selects a word, triple click a line, Shift-click extends, and a click elsewhere in the view or Escape clears it. Dragging past the top or bottom edge scrolls.
+- Drag in the code to select text in one pane, or across the rows of the unified view as shown. Double click selects a word, triple click a line, Shift-click extends the selection or selects from the last click, and a click elsewhere in the view or Escape clears it. Dragging past the top or bottom edge scrolls.
 - Cmd/Ctrl+C copies the text as shown, each line followed by its own line end, without `+`/`-` markers or line numbers. Folded lines are left out; lines your `DiffLineSource` hasn't loaded are loaded for the copy.
 - A drag in the gutter still selects whole lines. There is one selection at a time, and `controller.copySelection()` copies whichever there is.
 - `controller.textSelection` is a `ValueListenable<CodeSelection?>` with the side (null in the unified view, where lines are rows), start and end as line and column, so you can show your own menu or handle keys yourself; `controller.textOf(selection)` gives its text and `controller.clearTextSelection()` clears it. `selectionChanges` fires for it too.

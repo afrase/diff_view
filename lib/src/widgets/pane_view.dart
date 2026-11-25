@@ -94,6 +94,14 @@ sealed class PaneModel {
     if (sel == null) return null;
     return sel.side == (unified == null ? side : null) ? sel : null;
   }
+
+  /// The place of the last click when it is in this column and nothing is
+  /// selected, or null.
+  CodePosition? get ownCaret {
+    final caret = caretOf(controller.textSelection);
+    if (caret == null) return null;
+    return caret.side == (unified == null ? side : null) ? caret.anchor : null;
+  }
 }
 
 /// One pane of a side-by-side view.
@@ -470,14 +478,19 @@ class _PaneViewState extends State<PaneView>
     if (_onInlay(local.dy)) return;
     final pos = _codePositionAt(local, downward: true);
     if (pos == null) return;
-    final current = _m.ownTextSelection;
-    if (HardwareKeyboard.instance.isShiftPressed && current != null) {
+    final shift = HardwareKeyboard.instance.isShiftPressed;
+    // Shift extends from the selection's anchor, or from the last click.
+    final anchor = _m.ownTextSelection?.anchor ?? _m.ownCaret;
+    if (shift && anchor != null) {
       _clicks = 1;
       _clickTimer?.cancel();
-      _unitStart = current.anchor;
-      _unitEnd = current.anchor;
-      _c.textSelection.select(_m.textSelection(current.anchor, pos));
+      _unitStart = anchor;
+      _unitEnd = anchor;
+      _c.textSelection.select(_m.textSelection(anchor, pos));
     } else {
+      // A Shift-click with nothing to extend is a first click, never a
+      // double one.
+      if (shift) _clickTimer?.cancel();
       _countClick(local);
       final (start, end) = _unitAt(pos);
       _unitStart = start;
@@ -674,11 +687,15 @@ class _PaneViewState extends State<PaneView>
       unawaited(_m.copySelection());
       return KeyEventResult.handled;
     }
-    if (key == LogicalKeyboardKey.escape &&
-        (_m.selection != null || _c.textSelection.value != null)) {
-      _m.clearSelection();
+    if (key == LogicalKeyboardKey.escape) {
+      final selected = _m.selection != null || _c.textSelection.value != null;
+      // Escape also forgets the last click, which is not a selection: the
+      // key is still an ancestor's then.
       _c.clearTextSelection();
-      return KeyEventResult.handled;
+      if (selected) {
+        _m.clearSelection();
+        return KeyEventResult.handled;
+      }
     }
     return KeyEventResult.ignored;
   }

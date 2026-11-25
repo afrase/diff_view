@@ -626,7 +626,116 @@ void viewTests({required bool unified}) {
     expect(c.textSelection.value, isNotNull);
   });
 
+  testWidgets('shift-click extends from the last click', (tester) async {
+    mockClipboard(tester);
+    final v = await pumpView(tester, unified: unified);
+    final c = v.c;
+    var changes = 0;
+    c.selectionChanges.addListener(() => changes++);
+    await v.click(v.at(0, 2));
+    expect(c.textSelection.value, isNull, reason: 'a click selects nothing');
+    expect(changes, 0, reason: 'the place of a click is no selection');
+    await v.shiftClick(v.at(2, 5));
+    expect(
+      c.textSelection.value,
+      v.selection(const CodePosition(0, 2), const CodePosition(2, 5)),
+    );
+    expect(
+      await c.copySelection(),
+      '${v.text(0).substring(2)}\n${v.text(1)}\n${v.text(2).substring(0, 5)}',
+    );
+  });
+
+  testWidgets('shift-click before the last click selects backwards', (
+    tester,
+  ) async {
+    mockClipboard(tester);
+    final v = await pumpView(tester, unified: unified);
+    final c = v.c;
+    await v.click(v.at(2, 5));
+    await v.shiftClick(v.at(1, 3));
+    expect(
+      c.textSelection.value,
+      v.selection(const CodePosition(2, 5), const CodePosition(1, 3)),
+    );
+    expect(
+      await c.copySelection(),
+      '${v.text(1).substring(3)}\n${v.text(2).substring(0, 5)}',
+    );
+  });
+
+  testWidgets('after Escape or clearTextSelection, shift-click selects '
+      'nothing', (tester) async {
+    final v = await pumpView(tester, unified: unified);
+    final c = v.c;
+    await v.drag(v.at(0, 2), v.at(1, 4));
+    await v.key(LogicalKeyboardKey.escape);
+    await v.shiftClick(v.at(2, 5));
+    expect(c.textSelection.value, isNull);
+
+    // Escape with only a click's place clears it too.
+    await v.wait();
+    await v.click(v.at(0, 2));
+    await v.key(LogicalKeyboardKey.escape);
+    await v.shiftClick(v.at(2, 5));
+    expect(c.textSelection.value, isNull);
+
+    await v.wait();
+    await v.click(v.at(0, 2));
+    c.clearTextSelection();
+    await v.shiftClick(v.at(2, 5));
+    expect(c.textSelection.value, isNull);
+  });
+
+  testWidgets('a gutter selection or turning selection off forgets the '
+      'last click', (tester) async {
+    final v = await pumpView(tester, unified: unified);
+    final c = v.c;
+    await v.click(v.at(0, 2));
+    await v.wait();
+    await v.click(v.gutterAt(3));
+    await v.wait();
+    await v.shiftClick(v.at(2, 5));
+    expect(c.textSelection.value, isNull);
+
+    await v.wait();
+    await v.click(v.at(0, 2));
+    c
+      ..textSelectionEnabled = false
+      ..textSelectionEnabled = true;
+    await v.shiftClick(v.at(2, 5));
+    expect(c.textSelection.value, isNull);
+  });
+
+  testWidgets('with text selection off, shift-click selects nothing', (
+    tester,
+  ) async {
+    final v = await pumpView(tester, unified: unified, enabled: false);
+    await v.click(v.at(0, 2));
+    await v.shiftClick(v.at(2, 5));
+    expect(v.c.textSelection.value, isNull);
+  });
+
   if (!unified) {
+    testWidgets('shift-click in the other pane places a new click there', (
+      tester,
+    ) async {
+      final v = await pumpView(tester, unified: false);
+      final c = v.c;
+      final old = tester.getTopLeft(find.byType(DiffPane).first);
+      // Old line 1, then new line 2: no selection across panes.
+      final shift = old.dx - tester.getTopLeft(v.pane).dx;
+      await v.click(v.at(1, 2).translate(shift, 0));
+      await v.shiftClick(v.at(2, 5));
+      expect(c.textSelection.value, isNull);
+      // That Shift-click is now the place a Shift-click extends from.
+      await v.shiftClick(v.at(3, 1));
+      expect(
+        c.textSelection.value,
+        v.selection(const CodePosition(2, 5), const CodePosition(3, 1)),
+      );
+    });
+
     testWidgets('a click in the other pane clears it', (tester) async {
       final v = await pumpView(tester, unified: false);
       await v.drag(v.at(0, 2), v.at(1, 4));

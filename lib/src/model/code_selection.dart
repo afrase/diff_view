@@ -89,21 +89,34 @@ final class CodeSelectionController extends ChangeNotifier
     implements ValueListenable<CodeSelection?> {
   CodeSelection? _value;
 
+  // The last collapsed selection, kept while [value] is null: the place a
+  // plain click put the caret, which a Shift-click extends from. It is
+  // never drawn and never notifies.
+  CodeSelection? _caret;
+
   /// The selection, or null.
   @override
   CodeSelection? get value => _value;
 
-  /// Replaces the selection with [selection]; a collapsed one clears it.
+  /// Replaces the selection with [selection]. A collapsed one clears it
+  /// and is kept, unseen, as the place a Shift-click in the code extends
+  /// from, as a click's is.
   void select(CodeSelection? selection) {
-    final next = selection == null || selection.isCollapsed ? null : selection;
+    final collapsed = selection != null && selection.isCollapsed;
+    _caret = collapsed ? selection : null;
+    final next = collapsed ? null : selection;
     if (next == _value) return;
     _value = next;
     notifyListeners();
   }
 
-  /// Clears the selection.
+  /// Clears the selection and the place a Shift-click extends from.
   void clear() => select(null);
 }
+
+/// The collapsed selection [controller] keeps while it has no
+/// [CodeSelectionController.value]: the place of the last click, or null.
+CodeSelection? caretOf(CodeSelectionController controller) => controller._caret;
 
 /// The word around UTF-16 [offset] of [text], as `(start, end)`: the run
 /// of characters of one class (letters, digits and `_`; spaces and tabs;

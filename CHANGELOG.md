@@ -1,6 +1,6 @@
 ## 0.3.0
 
-- Text selection in the code: drag to select by character across lines, in one pane or across the unified rows as shown, with autoscroll past the edges. Double click selects a word, triple click a line, Shift-click extends, a click elsewhere or Escape clears. The pointer is a text cursor over code.
+- Text selection in the code: drag to select by character across lines, in one pane or across the unified rows as shown, with autoscroll past the edges. Double click selects a word, triple click a line, Shift-click extends the selection or selects from the last click, a click elsewhere or Escape clears. The pointer is a text cursor over code.
 - Cmd/Ctrl+C copies the selected text as shown: lines joined by their own line ends, no markers or line numbers, folded lines left out. Lines a paging source hasn't loaded are loaded first.
 - `DiffViewController.textSelection` (a `CodeSelectionController`, a `ValueListenable<CodeSelection?>`), `clearTextSelection` and `textOf`; `CodeSelection` and `CodePosition` give the side, start and end as line and column. `selectionChanges` fires for it. `textSelectionEnabled` (on by default) turns it off.
 - One selection at a time: a text selection clears the gutter selection and the other way round. `copySelection` copies whichever there is, the unified one included.
