@@ -4,7 +4,7 @@
 - Cmd/Ctrl+C copies the selected text as shown: lines joined by their own line ends, no markers or line numbers, folded lines left out. Lines a paging source hasn't loaded are loaded first.
 - `DiffViewController.textSelection` (a `CodeSelectionController`, a `ValueListenable<CodeSelection?>`), `clearTextSelection` and `textOf`; `CodeSelection` and `CodePosition` give the side, start and end as line and column. `selectionChanges` fires for it. `textSelectionEnabled` (on by default) turns it off.
 - One selection at a time: a text selection clears the gutter selection and the other way round. `copySelection` copies whichever there is, the unified one included.
-- `DiffThemeData.textSelection`, set in both built-in themes; unset, the selection colour is used.
+- `DiffThemeData.textSelection`, set in both built-in themes; unset, the selection colour is used. The built-in colours are opaque, so a changed word's tint does not show inside a selection; a colour with transparency keeps it.
 - `LineLayout.offsetAt` hit tests a laid-out line.
 - `DiffPaneViewport` takes `textSelection`.
 - The example app shows the selection and has a Copy button.

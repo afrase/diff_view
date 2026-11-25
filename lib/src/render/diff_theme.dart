@@ -208,7 +208,9 @@ final class DiffThemeData {
 
   /// Text selection in the code, painted behind the text and over the
   /// line and word tints; null uses [selection]. Both built-in themes set
-  /// it.
+  /// it. It is painted as given, so an opaque colour hides the changed-word
+  /// tint inside the selection, as an editor's selection does; give it
+  /// some transparency to keep changed words visible through it.
   final Color? textSelection;
 
   /// The colour the text selection is painted in: [textSelection], or

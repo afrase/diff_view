@@ -64,7 +64,7 @@ UnifiedDiff(
 - Cmd/Ctrl+C copies the text as shown, each line followed by its own line end, without `+`/`-` markers or line numbers. Folded lines are left out; lines your `DiffLineSource` hasn't loaded are loaded for the copy.
 - A drag in the gutter still selects whole lines. There is one selection at a time, and `controller.copySelection()` copies whichever there is.
 - `controller.textSelection` is a `ValueListenable<CodeSelection?>` with the side (null in the unified view, where lines are rows), start and end as line and column, so you can show your own menu or handle keys yourself; `controller.textOf(selection)` gives its text and `controller.clearTextSelection()` clears it. `selectionChanges` fires for it too.
-- `DiffThemeData.textSelection` is its colour. To select only lines, pass `textSelectionEnabled: false` to the controller.
+- `DiffThemeData.textSelection` is its colour. It is painted as given, over the line and word tints: the built-in colours are opaque, so changed words are not tinted inside a selection, as in an editor; a colour with transparency keeps them visible. To select only lines, pass `textSelectionEnabled: false` to the controller.
 
 ## Syntax highlighting
 
