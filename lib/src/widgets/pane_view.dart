@@ -651,6 +651,9 @@ class _PaneViewState extends State<PaneView>
     if (e is! KeyDownEvent && e is! KeyRepeatEvent) {
       return KeyEventResult.ignored;
     }
+    // A focused descendant, such as a text field in an inlay, keeps its own
+    // keys: copy and Escape there are the field's, not the code's.
+    if (!node.hasPrimaryFocus) return KeyEventResult.ignored;
     final keys = HardwareKeyboard.instance;
     final key = e.logicalKey;
     if (keys.isShiftPressed &&

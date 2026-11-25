@@ -426,6 +426,7 @@ Future<View> pumpView(
   WidgetTester tester, {
   required bool unified,
   bool enabled = true,
+  InlayBuilder? inlayBuilder,
   List<Seg> segs = const [
     Eq(3),
     Mod(2, 3),
@@ -452,8 +453,9 @@ Future<View> pumpView(
   );
   addTearDown(c.dispose);
   final theme = DiffThemeData.light();
-  Widget inlay(BuildContext context, InlaySpec spec) =>
-      SizedBox(height: 60, child: Text('inlay ${spec.id}'));
+  final inlay =
+      inlayBuilder ??
+      (context, spec) => SizedBox(height: 60, child: Text('inlay ${spec.id}'));
   await tester.pumpWidget(
     MaterialApp(
       home: Scaffold(
@@ -678,6 +680,43 @@ void viewTests({required bool unified}) {
     await v.wait();
     await v.click(inlay);
     expect(c.textSelection.value, isNotNull);
+  });
+
+  testWidgets('a text field in an inlay keeps its own copy and Escape', (
+    tester,
+  ) async {
+    final clipboard = mockClipboard(tester);
+    final field = TextEditingController(text: 'comment text');
+    addTearDown(field.dispose);
+    final v = await pumpView(
+      tester,
+      unified: unified,
+      inlayBuilder: (context, spec) =>
+          SizedBox(height: 60, child: TextField(controller: field)),
+    );
+    final c = v.c;
+    await v.drag(v.at(0, 1), v.at(0, 3));
+    expect(c.textSelection.value, isNotNull);
+    c.addInlay(const InlaySpec(id: 'note', side: PaneSide.neu, afterLine: 4));
+    await tester.pump();
+    await tester.pump();
+    await v.wait();
+    await tester.tap(find.byType(TextField));
+    await tester.pump();
+    field.selection = const TextSelection(baseOffset: 0, extentOffset: 7);
+    await tester.pump();
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyC);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await tester.pumpAndSettle();
+    expect(clipboard(), 'comment');
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pump();
+    expect(
+      c.textSelection.value,
+      isNotNull,
+      reason: "Escape in the field is the field's",
+    );
   });
 
   testWidgets('a text cursor over code, as before over the gutter', (
