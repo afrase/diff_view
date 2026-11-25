@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:diff_view/src/model/code_selection.dart';
 import 'package:diff_view/src/model/diff_document.dart';
 import 'package:diff_view/src/model/diff_line.dart';
 import 'package:diff_view/src/model/fold_model.dart';
@@ -28,8 +29,12 @@ final class _Signal extends ChangeNotifier {
 }
 
 /// State of one open side-by-side file view : folds,
-/// both panes' geometry and scroll controllers, the sync coupling, inlays
-/// and the line selection.
+/// both panes' geometry and scroll controllers, the sync coupling, inlays,
+/// the line selection and the text selection.
+///
+/// There is one selection at a time: a text selection ([textSelection])
+/// clears the gutter selections ([selection], [unifiedSelection]), and
+/// either of those clears the text selection.
 ///
 /// A unified view of the same file (`UnifiedDiff`) shares the folds,
 /// inlays, theme and caches, and has its own rows, geometry, scroll
@@ -49,6 +54,7 @@ class DiffViewController extends ChangeNotifier {
     int foldContext = 4,
     double devicePixelRatio = 2,
     this.maxCachedLines = DiffPaintResources.defaultMaxCachedLines,
+    this._textSelectionEnabled = true,
   }) : folds = FoldModel(document, context: foldContext),
        _resources = DiffPaintResources(
          theme: theme,
@@ -74,8 +80,11 @@ class DiffViewController extends ChangeNotifier {
       _scrolls[side.index].addListener(() => _onScroll(side));
     }
     _unifiedScroll.addListener(reclampHorizontal);
-    selection.addListener(_selectionSignal.fire);
-    unifiedSelection.addListener(_selectionSignal.fire);
+    selection.addListener(() => _lineSelectionChanged(selection.value != null));
+    unifiedSelection.addListener(
+      () => _lineSelectionChanged(unifiedSelection.value != null),
+    );
+    textSelection.addListener(_textSelectionChanged);
   }
 
   /// The file's header.
@@ -98,6 +107,26 @@ class DiffViewController extends ChangeNotifier {
 
   /// The gutter row selection of the unified view.
   final RowSelectionController unifiedSelection = RowSelectionController();
+
+  /// The text selection in the code, by character, of one pane or of the
+  /// unified view. Listen to it to show a menu of your own; set it with
+  /// [CodeSelectionController.select] and clear it with
+  /// [clearTextSelection]. [textOf] gives its text.
+  final CodeSelectionController textSelection = CodeSelectionController();
+
+  bool _textSelectionEnabled;
+
+  /// Whether a drag in the code selects text (on by default). Off, the
+  /// code area takes no selection and only the gutter selects lines;
+  /// turning it off clears the text selection.
+  bool get textSelectionEnabled => _textSelectionEnabled;
+  set textSelectionEnabled(bool value) {
+    _textSelectionEnabled = value;
+    if (!value) textSelection.clear();
+  }
+
+  /// Clears the text selection.
+  void clearTextSelection() => textSelection.clear();
 
   /// Horizontal code offset, shared by both panes.
   final ValueNotifier<double> horizontal = ValueNotifier(0);
@@ -172,7 +201,8 @@ class DiffViewController extends ChangeNotifier {
   /// Fires when either pane's geometry, or the unified view's, changes.
   Listenable get geometryChanges => _geometrySignal;
 
-  /// Fires when the selection or the unified selection changes.
+  /// Fires when the line selection, the unified selection or the text
+  /// selection changes.
   Listenable get selectionChanges => _selectionSignal;
 
   /// The inlays of both panes. Changing them notifies listeners.
@@ -495,12 +525,20 @@ class DiffViewController extends ChangeNotifier {
     return w;
   }
 
-  /// Copies the selected lines of the selection's side to the clipboard,
-  /// loading rows that are not in memory. Returns the text, or
-  /// null when nothing is selected.
+  /// Copies whichever selection there is to the clipboard, loading rows
+  /// that are not in memory: the text selection ([textOf]), else the
+  /// selected lines of the line selection's side, else the unified
+  /// selection ([copyUnifiedSelection]). Returns the text, or null when
+  /// nothing is selected.
   Future<String?> copySelection() async {
+    final code = textSelection.value;
+    if (code != null) {
+      final copied = await textOf(code);
+      await Clipboard.setData(ClipboardData(text: copied));
+      return copied;
+    }
     final sel = selection.value;
-    if (sel == null) return null;
+    if (sel == null) return await copyUnifiedSelection();
     final text = copyTextOf(await lines.load(sel.side, sel.span));
     await Clipboard.setData(ClipboardData(text: text));
     return text;
@@ -549,6 +587,64 @@ class DiffViewController extends ChangeNotifier {
       out
         ..write(l.text)
         ..write(end);
+    }
+    return out.toString();
+  }
+
+  /// The text [selection] covers as the view shows it: from its start to
+  /// its end, each line's text joined by that line's terminator, with no
+  /// markers or line numbers. Rows a fold hides are left out. In a unified
+  /// view it is the text of the rows in order; an old last line without a
+  /// terminator ends with the next row's one, or `\n`. Lines that are not
+  /// in memory are loaded. Columns past a line's end count as its end.
+  Future<String> textOf(CodeSelection selection) async {
+    final start = selection.start;
+    final end = selection.end;
+    final span = ModelSpan(start.line, end.line + 1);
+    final side = selection.side;
+    // The rows shown, with the line each one shows.
+    final shown = <(int, DiffLine)>[];
+    if (side != null) {
+      final g = geometry(side);
+      final loaded = await lines.load(side, span);
+      for (var r = span.start; r < span.end; r++) {
+        if (g.isRowVisible(r)) shown.add((r, loaded[r - span.start]));
+      }
+    } else {
+      final rows = unifiedRows;
+      final g = unifiedGeometry;
+      final spans = rows.linesIn(span);
+      final old = spans.old.isEmpty
+          ? const <DiffLine>[]
+          : await lines.load(PaneSide.old, spans.old);
+      final neu = spans.neu.isEmpty
+          ? const <DiffLine>[]
+          : await lines.load(PaneSide.neu, spans.neu);
+      for (var r = span.start; r < span.end; r++) {
+        if (!g.isRowVisible(r)) continue;
+        final n = rows.newLineAt(r);
+        shown.add((
+          r,
+          n >= 0
+              ? neu[n - spans.neu.start]
+              : old[rows.oldLineAt(r) - spans.old.start],
+        ));
+      }
+    }
+    final out = StringBuffer();
+    for (var i = 0; i < shown.length; i++) {
+      final (row, l) = shown[i];
+      final n = l.text.length;
+      final from = row == start.line ? start.column.clamp(0, n) : 0;
+      final to = row == end.line ? end.column.clamp(from, n) : n;
+      out.write(l.text.substring(from, to));
+      if (i == shown.length - 1) break;
+      var terminator = l.ending.terminator;
+      if (terminator.isEmpty) {
+        final next = shown[i + 1].$2.ending.terminator;
+        terminator = next.isEmpty ? '\n' : next;
+      }
+      out.write(terminator);
     }
     return out.toString();
   }
@@ -617,6 +713,21 @@ class DiffViewController extends ChangeNotifier {
     g.setHidden(spans);
   }
 
+  // A gutter selection that starts clears the text selection; one that
+  // ends leaves it.
+  void _lineSelectionChanged(bool started) {
+    if (started) textSelection.clear();
+    _selectionSignal.fire();
+  }
+
+  void _textSelectionChanged() {
+    if (textSelection.value != null) {
+      selection.clear();
+      unifiedSelection.clear();
+    }
+    _selectionSignal.fire();
+  }
+
   void _geometryChanged() {
     _syncMap = null;
     _geometrySignal.fire();
@@ -643,6 +754,7 @@ class DiffViewController extends ChangeNotifier {
     _unifiedScroll.dispose();
     _geometrySignal.dispose();
     _selectionSignal.dispose();
+    textSelection.dispose();
     horizontal.dispose();
     unawaited(Future<void>.value().then((_) => _resources.dispose()));
     super.dispose();
