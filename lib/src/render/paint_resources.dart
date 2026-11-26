@@ -97,10 +97,12 @@ final class DiffPaintResources {
   /// Builds line layouts.
   final LineLayoutBuilder layouts;
 
-  /// Default capacity of [lines]. A laid-out line
+  /// Default capacity of [lines], in paragraphs. A laid-out line
   /// costs about 35 KB of native memory on macOS (measured), so
   /// 6,000 would cost over 200 MB. 1,500 lines is about 15
-  /// viewports of both panes.
+  /// viewports of both panes. A line recoloured for
+  /// [DiffThemeData.minTextContrast] keeps one more paragraph per view
+  /// that shows it, and each counts, so fewer lines stay cached then.
   static const defaultMaxCachedLines = 1500;
 
   /// Laid-out code lines.

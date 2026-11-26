@@ -129,13 +129,14 @@ final class LineLayout {
   // fills it was painted on: at most two, one per view showing the line.
   List<_ContrastParagraph>? _contrast;
 
-  /// The paragraph to draw on a row tinted [lineTint] (null: none) with
-  /// its changed words tinted [wordTint] (null: no changed words): the
-  /// laid-out [paragraph], or one with the runs that read under the
-  /// theme's [DiffThemeData.minTextContrast] there recoloured. Built by
-  /// [builder] the first time [line] is drawn on those tints, then kept.
-  /// Call only with the contrast on.
-  ui.Paragraph paragraphOn(
+  // The paragraph to draw on a row tinted [lineTint] (null: none) with
+  // its changed words tinted [wordTint] (null: no changed words): the
+  // laid-out [paragraph], or one with the runs that read under the
+  // theme's [DiffThemeData.minTextContrast] there recoloured. Built by
+  // [builder] the first time [line] is drawn on those tints, then kept.
+  // Only with the contrast on; reached through [ParagraphCache.paragraphOn],
+  // which counts what it keeps.
+  ui.Paragraph _paragraphOn(
     LineLayoutBuilder builder,
     DiffLine line,
     Color? lineTint,
@@ -155,6 +156,19 @@ final class LineLayout {
     if (list.length == 2) list.removeAt(0).paragraph?.dispose();
     list.add(_ContrastParagraph(lineTint, wordTint, line.inner, built));
     return built ?? paragraph;
+  }
+
+  // The native paragraphs this layout holds: its own and the recoloured
+  // ones it keeps.
+  int get _paragraphCount {
+    var n = 1;
+    final list = _contrast;
+    if (list != null) {
+      for (final v in list) {
+        if (v.paragraph != null) n++;
+      }
+    }
+    return n;
   }
 
   static bool _sameInts(Uint32List a, Uint32List b) {
@@ -470,18 +484,25 @@ void syntaxRuns(
 /// fetched again) rebuilds the entry, so a stale layout is never painted.
 /// The check is an identity test in the common case.
 final class ParagraphCache {
-  /// Creates a cache of at most [maxEntries] layouts.
+  /// Creates a cache of at most [maxEntries] paragraphs.
   new({this.maxEntries = 6000})
     : assert(maxEntries > 0, 'maxEntries must be positive');
 
-  /// Capacity.
+  /// Capacity, in paragraphs: one per layout, plus the recoloured ones a
+  /// layout keeps for [DiffThemeData.minTextContrast] (at most two). With
+  /// the contrast off it is the number of layouts. The newest layout is
+  /// always kept, so a capacity under three can be passed by one.
   final int maxEntries;
 
   final LinkedHashMap<int, _CacheEntry> _map = LinkedHashMap();
   int _invalidated = 0;
+  int _paragraphs = 0;
 
   /// Layouts held.
   int get length => _map.length;
+
+  /// Paragraphs held, the recoloured ones included.
+  int get paragraphs => _paragraphs;
 
   /// Entries rebuilt because their line changed (diagnostics).
   int get invalidated => _invalidated;
@@ -498,16 +519,51 @@ final class ParagraphCache {
         return hit.layout;
       }
       _invalidated++;
+      _paragraphs -= hit.layout._paragraphCount;
       hit.layout.dispose();
       hit
         ..line = line
         ..layout = build();
+      _paragraphs++;
       return hit.layout;
     }
     final built = build();
     _map[key] = _CacheEntry(line, built);
-    if (_map.length > maxEntries) _evict(key);
+    _paragraphs++;
+    _fit(key);
     return built;
+  }
+
+  /// The paragraph to draw [line], cached under [key] (just returned by
+  /// [getOrBuild]), on a row tinted [lineTint] with its changed words
+  /// tinted [wordTint]: its own, or one recoloured for the theme's
+  /// [DiffThemeData.minTextContrast], built by [builder] the first time
+  /// and kept with the layout. A kept paragraph counts against
+  /// [maxEntries]. Only with the contrast on.
+  @internal
+  ui.Paragraph paragraphOn(
+    int key,
+    LineLayoutBuilder builder,
+    DiffLine line,
+    Color? lineTint,
+    Color? wordTint,
+  ) {
+    final layout = _map[key]!.layout;
+    final before = layout._paragraphCount;
+    final p = layout._paragraphOn(builder, line, lineTint, wordTint);
+    final grown = layout._paragraphCount - before;
+    if (grown != 0) {
+      _paragraphs += grown;
+      _fit(key);
+    }
+    return p;
+  }
+
+  // Evicts entries other than [keep] until the paragraphs fit.
+  void _fit(int keep) {
+    while (_paragraphs > maxEntries && _map.length > 1) {
+      _evict(keep);
+    }
   }
 
   // Evicts one entry other than [keep] (the one just added). Ends within
@@ -521,6 +577,7 @@ final class ParagraphCache {
         _map[key] = e;
         continue;
       }
+      _paragraphs -= e.layout._paragraphCount;
       e.layout.dispose();
       return;
     }
@@ -530,7 +587,12 @@ final class ParagraphCache {
   bool contains(int key) => _map.containsKey(key);
 
   /// Drops [key].
-  void remove(int key) => _map.remove(key)?.layout.dispose();
+  void remove(int key) {
+    final e = _map.remove(key);
+    if (e == null) return;
+    _paragraphs -= e.layout._paragraphCount;
+    e.layout.dispose();
+  }
 
   /// Drops everything.
   void clear() {
@@ -538,6 +600,7 @@ final class ParagraphCache {
       e.layout.dispose();
     }
     _map.clear();
+    _paragraphs = 0;
   }
 }
 

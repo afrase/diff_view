@@ -93,7 +93,9 @@ class DiffViewController extends ChangeNotifier {
   /// Row source.
   final DiffLineSource lines;
 
-  /// Capacity of the line layout cache.
+  /// Capacity of the line layout cache, in paragraphs: one per laid-out
+  /// line, plus each recoloured one kept for
+  /// [DiffThemeData.minTextContrast].
   final int maxCachedLines;
 
   /// Capture names of the file's syntax tokens (id → name).

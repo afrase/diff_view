@@ -255,6 +255,73 @@ void main() {
       expect(cache.length, 0);
     });
 
+    test('recoloured paragraphs count against the budget', () {
+      // A theme whose keyword all but vanishes on the modified word tint.
+      final base = DiffThemeData.light();
+      final theme = DiffThemeData(
+        brightness: base.brightness,
+        background: base.background,
+        text: base.text,
+        gutterBackground: base.gutterBackground,
+        gutterText: base.gutterText,
+        gutterTextChanged: base.gutterTextChanged,
+        insertedLine: base.insertedLine,
+        insertedWord: base.insertedWord,
+        deletedLine: base.deletedLine,
+        deletedWord: base.deletedWord,
+        modifiedLine: const ui.Color(0xFFE6EEFC),
+        modifiedWord: const ui.Color(0xFF6E8CC8),
+        ribbonInserted: base.ribbonInserted,
+        ribbonDeleted: base.ribbonDeleted,
+        ribbonModified: base.ribbonModified,
+        dividerBackground: base.dividerBackground,
+        selection: base.selection,
+        selectionOverCap: base.selectionOverCap,
+        foldPlaceholderBackground: base.foldPlaceholderBackground,
+        foldPlaceholderText: base.foldPlaceholderText,
+        loadingBar: base.loadingBar,
+        hoverAffordance: base.hoverAffordance,
+        syntax: const {'keyword': SyntaxStyle(ui.Color(0xFF3A5A9A))},
+        minTextContrast: 4.5,
+      );
+      final builder = LineLayoutBuilder(theme, const ['', 'keyword']);
+      final cache = ParagraphCache(maxEntries: 4);
+      DiffLine line(int k) => DiffLine(
+        line: k,
+        text: 'func x$k',
+        kind: LineKind.modified,
+        syntax: Uint32List.fromList([0, 4, 1]),
+        inner: Uint32List.fromList([0, 4, innerChanged]),
+      );
+      void paint(int k) {
+        final l = line(k);
+        cache
+          ..getOrBuild(k, l, () => builder.build(l))
+          ..paragraphOn(k, builder, l, theme.modifiedLine, theme.modifiedWord);
+      }
+
+      paint(0);
+      expect(builder.contrastBuilds, 1);
+      expect(cache.length, 1);
+      expect(cache.paragraphs, 2);
+      paint(1);
+      expect(cache.paragraphs, 4);
+      // A third line's two paragraphs go over 4: the oldest goes.
+      paint(2);
+      expect(cache.paragraphs, lessThanOrEqualTo(4));
+      expect(cache.contains(0), isFalse);
+      expect(cache.contains(2), isTrue);
+      // The same tints again: nothing new, nothing counted twice.
+      final before = builder.contrastBuilds;
+      paint(2);
+      expect(builder.contrastBuilds, before);
+      expect(cache.paragraphs, lessThanOrEqualTo(4));
+      cache.remove(2);
+      expect(cache.paragraphs, 2);
+      cache.clear();
+      expect(cache.paragraphs, 0);
+    });
+
     test('an entry hit between inserts is never evicted', () {
       final builder = LineLayoutBuilder(DiffThemeData.light(), const ['']);
       final cache = ParagraphCache(maxEntries: 3);

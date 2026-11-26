@@ -412,10 +412,17 @@ void main() {
           syntax: Uint32List.fromList([0, 4, 1]),
           inner: Uint32List.fromList([inner[0], inner[1], innerChanged]),
         );
-        final layout = b.build(line);
-        final p = layout.paragraphOn(b, line, on.modifiedLine, on.modifiedWord);
+        final cache = ParagraphCache()
+          ..getOrBuild(0, line, () => b.build(line));
+        final p = cache.paragraphOn(
+          0,
+          b,
+          line,
+          on.modifiedLine,
+          on.modifiedWord,
+        );
         expect(p.width, greaterThan(0), reason: '$inner');
-        layout.dispose();
+        cache.clear();
       }
     });
   });
@@ -456,20 +463,20 @@ void main() {
       final first = line([3, 3, innerChanged]);
       final second = line([7, 3, innerChanged]);
       expect(first.sameLayoutAs(second), isTrue);
-      final layout = b.build(first);
-      final a = layout.paragraphOn(b, first, on.modifiedLine, on.modifiedWord);
+      final cache = ParagraphCache()
+        ..getOrBuild(0, first, () => b.build(first));
+      ui.Paragraph paint(DiffLine l) =>
+          cache.paragraphOn(0, b, l, on.modifiedLine, on.modifiedWord);
+      final a = paint(first);
       expect(b.contrastBuilds, 1);
       // The same words in a new list: kept.
       final again = line([3, 3, innerChanged]);
-      expect(
-        layout.paragraphOn(b, again, on.modifiedLine, on.modifiedWord),
-        same(a),
-      );
+      expect(paint(again), same(a));
       expect(b.contrastBuilds, 1);
-      final c = layout.paragraphOn(b, second, on.modifiedLine, on.modifiedWord);
+      final c = paint(second);
       expect(c, isNot(same(a)));
       expect(b.contrastBuilds, 2);
-      layout.dispose();
+      cache.clear();
     });
   });
 

@@ -642,8 +642,9 @@ class RenderDiffPane extends RenderBox
         _paintLoadingBars(canvas, textX, y);
         continue;
       }
+      final key = side.index | (number << 1);
       final layout = res.lines.getOrBuild(
-        side.index | (number << 1),
+        key,
         line,
         () => res.layouts.build(line),
       );
@@ -678,9 +679,10 @@ class RenderDiffPane extends RenderBox
         ));
       }
       // With a least text contrast, a row on a tint draws its text
-      // recoloured for that tint (built once, kept with the layout).
+      // recoloured for that tint (built once, kept with the layout and
+      // counted against the cache's budget).
       final paragraph = contrast && (tint != null || wordTint != null)
-          ? layout.paragraphOn(res.layouts, line, tint, wordTint)
+          ? res.lines.paragraphOn(key, res.layouts, line, tint, wordTint)
           : layout.paragraph;
       canvas.drawParagraph(paragraph, Offset(textX, y + res.textTop));
     }
