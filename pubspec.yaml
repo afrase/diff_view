@@ -1,6 +1,6 @@
 name: diff_view
 description: A fast side-by-side and unified diff view for Flutter, like JetBrains IDEs' diff viewer, with ribbons, synced scrolling, word highlights, folding, text selection and line selection.
-version: 0.3.0
+version: 0.4.0
 repository: https://github.com/afrase/diff_view
 topics: [diff, code, viewer, widget, desktop]
 

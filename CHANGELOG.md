@@ -1,3 +1,7 @@
+## 0.4.0
+
+- `DiffThemeData.minTextContrast` keeps a least WCAG contrast for code text on a line or word tint: a run that reads under it on its fill is drawn in its colour mixed toward `text`, by the least mix that reaches it (or in `text`). Text on the plain background, and runs that already read, keep their colours; the text selection isn't counted. 0, the default, turns it off and draws everything as before.
+
 ## 0.3.0
 
 - Text selection in the code: drag to select by character across lines, in one pane or across the unified rows as shown, with autoscroll past the edges. Double click selects a word, triple click a line, Shift-click extends the selection or selects from the last click, a click elsewhere or Escape clears. The pointer is a text cursor over code.

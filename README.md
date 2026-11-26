@@ -6,7 +6,7 @@ A fast side-by-side and unified diff view for Flutter, modelled on the JetBrains
 
 - Two synced panes with curved ribbons linking each change across the divider.
 - A unified (single-column) view of the same controller, for when one column reads better, such as a new file.
-- Word-level highlights inside changed lines, plus your own syntax colors.
+- Word-level highlights inside changed lines, plus your own syntax colors, with an optional least contrast for text on the highlights.
 - Nested folding of unchanged regions ("… N unchanged lines").
 - Text selection in the code with the mouse (drag, double and triple click, Shift-click) with copy, as in an editor.
 - Line selection in the gutter (drag, Shift-click, Shift+arrows) with copy.
@@ -69,6 +69,21 @@ UnifiedDiff(
 ## Syntax highlighting
 
 Pass `syntax:` to `TextDiff.compute`. It returns `(start, length, captureId)` triples for each line, where `captureId` indexes the `captureNames` you give the controller (for example `['', 'keyword', 'string']`). `DiffThemeData.syntax` maps capture names to colors, and a dotted name such as `keyword.control` falls back to `keyword`. Any tokenizer works; the example uses a small regex.
+
+## Text on a tint
+
+A theme's dim colours, such as a comment, can read on its background and get lost on a changed line's or changed word's tint. Set `minTextContrast` on the theme to keep a least WCAG contrast there:
+
+```dart
+final theme = DiffThemeData(
+  // ...your colours...
+  minTextContrast: 3,
+);
+```
+
+- A run of text that reads under it on its fill (the line tint over the background, or inside a changed word the word tint over that) is drawn in its colour mixed toward the theme's `text`, just far enough to reach it; if even `text` doesn't, in `text`.
+- Text on the plain background keeps its colour, however it reads, and so does every run that already reads. The text selection isn't counted, as it moves under the pointer.
+- It is 0, off, by default. On, each colour is worked out once per fill and a line's recoloured paragraph is built once and kept, so scrolling costs about the same.
 
 ## Your own diff or backend
 
