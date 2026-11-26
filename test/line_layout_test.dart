@@ -255,10 +255,10 @@ void main() {
       expect(cache.length, 0);
     });
 
-    test('recoloured paragraphs count against the budget', () {
-      // A theme whose keyword all but vanishes on the modified word tint.
+    // A theme whose keyword all but vanishes on the modified word tint.
+    DiffThemeData dimKeywordTheme() {
       final base = DiffThemeData.light();
-      final theme = DiffThemeData(
+      return DiffThemeData(
         brightness: base.brightness,
         background: base.background,
         text: base.text,
@@ -284,6 +284,10 @@ void main() {
         syntax: const {'keyword': SyntaxStyle(ui.Color(0xFF3A5A9A))},
         minTextContrast: 4.5,
       );
+    }
+
+    test('recoloured paragraphs count against the budget', () {
+      final theme = dimKeywordTheme();
       final builder = LineLayoutBuilder(theme, const ['', 'keyword']);
       final cache = ParagraphCache(maxEntries: 4);
       DiffLine line(int k) => DiffLine(
@@ -318,6 +322,55 @@ void main() {
       expect(cache.paragraphs, lessThanOrEqualTo(4));
       cache.remove(2);
       expect(cache.paragraphs, 2);
+      cache.clear();
+      expect(cache.paragraphs, 0);
+    });
+
+    test('a layout keeps two recoloured paragraphs, and a rebuild drops '
+        'them', () {
+      final theme = dimKeywordTheme();
+      final builder = LineLayoutBuilder(theme, const ['', 'keyword']);
+      final cache = ParagraphCache(maxEntries: 10);
+      final line = DiffLine(
+        line: 1,
+        text: 'func x',
+        kind: LineKind.modified,
+        syntax: Uint32List.fromList([0, 4, 1]),
+        inner: Uint32List.fromList([0, 4, innerChanged]),
+      );
+      final own = cache.getOrBuild(1, line, () => builder.build(line));
+      expect(cache.paragraphs, 1);
+      // Three pairs of tints, each one the keyword needs recolouring on.
+      final pairs = [
+        (theme.modifiedLine, theme.modifiedWord),
+        (theme.insertedLine, theme.modifiedWord),
+        (theme.deletedLine, theme.modifiedWord),
+      ];
+      final expected = [2, 3, 3];
+      for (var i = 0; i < pairs.length; i++) {
+        final (lineTint, wordTint) = pairs[i];
+        final p = cache.paragraphOn(1, builder, line, lineTint, wordTint);
+        expect(p, isNot(same(own.paragraph)), reason: 'pair $i');
+        expect(cache.paragraphs, expected[i], reason: 'pair $i');
+      }
+      expect(builder.contrastBuilds, 3);
+      // The first pair was dropped for the third: built again.
+      final (lineTint, wordTint) = pairs[0];
+      cache.paragraphOn(1, builder, line, lineTint, wordTint);
+      expect(builder.contrastBuilds, 4);
+      expect(cache.paragraphs, 3);
+      // Syntax arrives late: the line is laid out again, without the
+      // recoloured paragraphs.
+      final late = DiffLine(
+        line: 1,
+        text: 'func x',
+        kind: LineKind.modified,
+        syntax: Uint32List.fromList([0, 4, 1, 5, 1, 1]),
+        inner: Uint32List.fromList([0, 4, innerChanged]),
+      );
+      cache.getOrBuild(1, late, () => builder.build(late));
+      expect(cache.invalidated, 1);
+      expect(cache.paragraphs, 1);
       cache.clear();
       expect(cache.paragraphs, 0);
     });
