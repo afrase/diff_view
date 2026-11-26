@@ -146,6 +146,33 @@ void main() {
       }
     });
 
+    test('a colour as light as its fill goes toward the end that reads '
+        'better there', () {
+      // Its luminance equals the fill's, so neither side is its own. Both
+      // ends reach the target; the better one is taken.
+      const dark = Color(0xFF404040);
+      expect(
+        contrastRatio(white, dark),
+        greaterThan(contrastRatio(black, dark)),
+      );
+      expect(contrastRatio(black, dark), greaterThan(1.5));
+      final up = on(dark, dark, 1.5, bg: white);
+      expect(contrastRatio(up, dark), greaterThanOrEqualTo(1.5));
+      expect(up.computeLuminance(), greaterThan(dark.computeLuminance()));
+      expectFirstThatReads(up, dark, dark, 1.5);
+
+      const light = Color(0xFFC0C0C0);
+      expect(
+        contrastRatio(black, light),
+        greaterThan(contrastRatio(white, light)),
+      );
+      expect(contrastRatio(white, light), greaterThan(1.5));
+      final down = on(light, light, 1.5, bg: black);
+      expect(contrastRatio(down, light), greaterThanOrEqualTo(1.5));
+      expect(down.computeLuminance(), lessThan(light.computeLuminance()));
+      expectFirstThatReads(down, light, light, 1.5);
+    });
+
     test('a translucent colour is judged as it shows and keeps its alpha', () {
       final faint = comment.withValues(alpha: 0.5);
       final own = contrastRatio(
@@ -254,11 +281,17 @@ double shownContrast(Color c, Color fill) =>
 
 // The rule's tries for [from] on [fill], in order: its HSL lightness in
 // steps of 1/255 toward the end on its own side of the fill (white if it
-// shows lighter than the fill, black if darker), to that end, then from
-// [from] toward the other end. Each try is 8-bit, with [from]'s alpha.
+// shows lighter than the fill, black if darker, and whichever reads
+// better on the fill if it shows as light as the fill), to that end, then
+// from [from] toward the other end. Each try is 8-bit, with [from]'s
+// alpha.
 List<Color> tries(Color from, Color fill) {
   final hsl = HSLColor.fromColor(from);
-  final up = shown(from, fill).computeLuminance() > fill.computeLuminance();
+  final lum = shown(from, fill).computeLuminance();
+  final fillLum = fill.computeLuminance();
+  final up = lum == fillLum
+      ? contrastRatio(white, fill) >= contrastRatio(black, fill)
+      : lum > fillLum;
   final out = <Color>[];
   for (final dir in [up, !up]) {
     for (var k = 1; ; k++) {
