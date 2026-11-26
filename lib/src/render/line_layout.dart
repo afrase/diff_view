@@ -210,7 +210,7 @@ final class LineLayoutBuilder {
   int _contrastBuilds = 0;
 
   late final TextContrast _contrast = TextContrast(
-    toward: theme.text,
+    background: theme.background,
     minContrast: theme.minTextContrast,
   );
   // A colour-only style per recoloured colour, pushed over a capture's.

@@ -1,5 +1,7 @@
 import 'dart:ui';
 
+import 'package:flutter/painting.dart' show HSLColor;
+
 /// The WCAG 2 contrast ratio of two colours, from 1 to 21. Alpha is
 /// ignored: composite a translucent colour first.
 double contrastRatio(Color a, Color b) {
@@ -18,40 +20,83 @@ Color compositeFill(Color background, Color? lineTint, Color? wordTint) {
   return fill.a == 1 ? fill : fill.withValues(alpha: 1);
 }
 
-/// [color] as text on the opaque [fill] at a contrast of at least
-/// [minContrast]: [color] itself when it reads (and always when
-/// [minContrast] is 0 or less), else [color] mixed toward [toward] by the
-/// least 8-bit step that reaches it, else [toward]. A translucent [color]
-/// is judged as drawn on [fill].
+/// [color] as text on the opaque [fill], keeping the contrast it has on
+/// the pane's [background], up to [minContrast].
+///
+/// The target is the lesser of [minContrast] and [color]'s contrast on
+/// [background]. [color] itself when it reads that on [fill] (and always
+/// when [minContrast] is 0 or less). Otherwise [color] with its HSL
+/// lightness changed, hue, saturation and alpha kept, by the least change
+/// that reaches the target, in steps of 1/255: first away from [fill] on
+/// the side [color] is on (lighter when it is lighter than [fill], darker
+/// when darker), up to white or black, then from [color] toward the other
+/// end. When no step reaches it, whichever of [color], white and black
+/// reads best on [fill], so the result never reads worse than [color].
+/// A translucent [color] is judged as it shows on [fill] and on
+/// [background].
 Color readableOn(
   Color color,
   Color fill, {
-  required Color toward,
+  required Color background,
   required double minContrast,
 }) {
-  if (minContrast <= 0 || _reads(color, fill, minContrast)) return color;
-  // Contrast along the mix need not grow steadily (the fill can lie
-  // between the two colours), so every step is tried, first to last.
-  for (var k = 1; k < 255; k++) {
-    final c = Color(Color.lerp(color, toward, k / 255)!.toARGB32());
-    if (_reads(c, fill, minContrast)) return c;
+  if (minContrast <= 0) return color;
+  final own = _shownContrast(color, background);
+  final target = own < minContrast ? own : minContrast;
+  final start = _shownContrast(color, fill);
+  if (start >= target) return color;
+  final hsl = HSLColor.fromColor(color);
+  final lum = _shown(color, fill).computeLuminance();
+  final fillLum = fill.computeLuminance();
+  final up = lum == fillLum
+      ? contrastRatio(const Color(0xFFFFFFFF), fill) >=
+            contrastRatio(const Color(0xFF000000), fill)
+      : lum > fillLum;
+  for (final lighter in [up, !up]) {
+    for (var k = 1; ; k++) {
+      final raw = hsl.lightness + (lighter ? k : -k) / 255;
+      final l = raw < 0 ? 0.0 : (raw > 1 ? 1.0 : raw);
+      final c = _withLightness(hsl, l, color.a);
+      if (_shownContrast(c, fill) >= target) return c;
+      if (l == 0 || l == 1) break;
+    }
   }
-  return toward;
+  // Nothing reaches it: the best of the colour and the ends. Along each
+  // side contrast is best at the end, as luminance grows with lightness.
+  var best = color;
+  var bestContrast = start;
+  for (final c in [
+    _withLightness(hsl, up ? 1 : 0, color.a),
+    _withLightness(hsl, up ? 0 : 1, color.a),
+  ]) {
+    final r = _shownContrast(c, fill);
+    if (r > bestContrast) {
+      best = c;
+      bestContrast = r;
+    }
+  }
+  return best;
 }
 
-bool _reads(Color c, Color fill, double min) =>
-    contrastRatio(c.a == 1 ? c : Color.alphaBlend(c, fill), fill) >= min;
+// 8-bit channels, the alpha kept as it was.
+Color _withLightness(HSLColor hsl, double l, double alpha) =>
+    Color(hsl.withLightness(l).toColor().toARGB32()).withValues(alpha: alpha);
 
-/// [readableOn] with one [toward] and [minContrast], worked out once per
-/// colour and fill and kept.
+Color _shown(Color c, Color fill) => c.a == 1 ? c : Color.alphaBlend(c, fill);
+
+double _shownContrast(Color c, Color fill) =>
+    contrastRatio(_shown(c, fill), fill);
+
+/// [readableOn] with one [background] and [minContrast], worked out once
+/// per colour and fill and kept.
 final class TextContrast {
   /// Creates the cache.
-  new({required this.toward, required this.minContrast});
+  new({required this.background, required this.minContrast});
 
-  /// The colour dim text is mixed toward.
-  final Color toward;
+  /// The pane's background, where a colour's own contrast is measured.
+  final Color background;
 
-  /// The least contrast.
+  /// The floor.
   final double minContrast;
 
   final Map<(int, int), Color> _cache = {};
@@ -64,7 +109,7 @@ final class TextContrast {
       _cache[(color.toARGB32(), fill.toARGB32())] ??= readableOn(
         color,
         fill,
-        toward: toward,
+        background: background,
         minContrast: minContrast,
       );
 }

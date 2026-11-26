@@ -185,7 +185,7 @@ Future<Color> glyphAt(
 Color expected(DiffThemeData t, Color? line, Color? word) => readableOn(
   _comment,
   compositeFill(t.background, line, word),
-  toward: t.text,
+  background: t.background,
   minContrast: t.minTextContrast,
 );
 
