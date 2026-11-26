@@ -221,6 +221,7 @@ final class LineLayoutBuilder {
   // Text colour by capture id, as [_styles] draws it.
   final List<Color> _colors;
   double? _advance;
+  int _builds = 0;
   int _contrastBuilds = 0;
 
   late final TextContrast _contrast = TextContrast(
@@ -229,6 +230,10 @@ final class LineLayoutBuilder {
   );
   // A colour-only style per recoloured colour, pushed over a capture's.
   final Map<Color, ui.TextStyle> _colorStyles = {};
+
+  /// Lines laid out by [build] (diagnostics).
+  @visibleForTesting
+  int get builds => _builds;
 
   /// Recoloured paragraphs built for [DiffThemeData.minTextContrast]
   /// (diagnostics).
@@ -275,6 +280,7 @@ final class LineLayoutBuilder {
   /// Lays out [line]: tabs expanded to the theme's tab stops, syntax spans
   /// styled by capture id, one line, no width limit.
   LineLayout build(DiffLine line) {
+    _builds++;
     final (expanded, columns) = expandTabs(line.text, theme.tabSize);
     final b = ui.ParagraphBuilder(_paragraphStyle)..pushStyle(_base);
     var cursor = 0;
