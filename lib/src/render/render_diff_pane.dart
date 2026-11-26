@@ -7,6 +7,7 @@ import 'package:diff_view/src/model/line_coords.dart';
 import 'package:diff_view/src/model/line_source.dart';
 import 'package:diff_view/src/model/pane_geometry.dart';
 import 'package:diff_view/src/model/unified_rows.dart';
+import 'package:diff_view/src/render/diff_theme.dart';
 import 'package:diff_view/src/render/line_layout.dart';
 import 'package:diff_view/src/render/paint_resources.dart';
 import 'package:flutter/foundation.dart';
@@ -150,8 +151,9 @@ class DiffPaneViewport extends MultiChildRenderObjectWidget {
 /// one earlier in the same slot.
 ///
 /// Scrolling only repaints. Paint draws, per visible row, its change tint,
-/// inner (word) highlights and cached paragraph, then the gutter, the fold
-/// placeholders and the inlay children.
+/// inner (word) highlights and cached paragraph (recoloured for its tints
+/// when the theme sets [DiffThemeData.minTextContrast]), then the gutter,
+/// the fold placeholders and the inlay children.
 ///
 /// With [unified] the rows are those of a unified view: a deleted row is
 /// tinted as a deletion and an inserted one as an insertion, and the gutter
@@ -614,6 +616,7 @@ class RenderDiffPane extends RenderBox
     if (selected != null && selected.side != (rows == null ? _side : null)) {
       selected = null;
     }
+    final contrast = theme.minTextContrast > 0;
     final selStart = selected?.start;
     final selEnd = selected?.end;
     for (
@@ -645,9 +648,11 @@ class RenderDiffPane extends RenderBox
         () => res.layouts.build(line),
       );
       final inner = line.inner;
-      if (inner.isNotEmpty) {
-        wordPaint.color =
-            _wordTint(kind, unified: rows != null) ?? theme.modifiedWord;
+      final wordTint = inner.isEmpty
+          ? null
+          : _wordTint(kind, unified: rows != null) ?? theme.modifiedWord;
+      if (wordTint != null) {
+        wordPaint.color = wordTint;
         for (var i = 0; i + 2 < inner.length; i += 3) {
           if (inner[i + 2] & innerChanged == 0) continue;
           final start = inner[i];
@@ -672,7 +677,12 @@ class RenderDiffPane extends RenderBox
           selEnd,
         ));
       }
-      canvas.drawParagraph(layout.paragraph, Offset(textX, y + res.textTop));
+      // With a least text contrast, a row on a tint draws its text
+      // recoloured for that tint (built once, kept with the layout).
+      final paragraph = contrast && (tint != null || wordTint != null)
+          ? layout.paragraphOn(res.layouts, line, tint, wordTint)
+          : layout.paragraph;
+      canvas.drawParagraph(paragraph, Offset(textX, y + res.textTop));
     }
     canvas
       ..restore()

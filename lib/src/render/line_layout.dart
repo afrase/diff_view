@@ -4,6 +4,9 @@ import 'dart:ui' as ui;
 
 import 'package:diff_view/src/model/diff_line.dart';
 import 'package:diff_view/src/render/diff_theme.dart';
+import 'package:diff_view/src/render/text_contrast.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/painting.dart' show Color;
 
 /// A code line laid out for painting.
 final class LineLayout {
@@ -122,8 +125,68 @@ final class LineLayout {
     return List.unmodifiable(spans);
   }
 
-  /// Releases the paragraph.
-  void dispose() => paragraph.dispose();
+  // The paragraph recoloured for the theme's least text contrast on the
+  // fills it was painted on: at most two, one per view showing the line.
+  List<_ContrastParagraph>? _contrast;
+
+  /// The paragraph to draw on a row tinted [lineTint] (null: none) with
+  /// its changed words tinted [wordTint] (null: no changed words): the
+  /// laid-out [paragraph], or one with the runs that read under the
+  /// theme's [DiffThemeData.minTextContrast] there recoloured. Built by
+  /// [builder] the first time [line] is drawn on those tints, then kept.
+  /// Call only with the contrast on.
+  ui.Paragraph paragraphOn(
+    LineLayoutBuilder builder,
+    DiffLine line,
+    Color? lineTint,
+    Color? wordTint,
+  ) {
+    final list = _contrast ??= [];
+    for (var i = 0; i < list.length; i++) {
+      final v = list[i];
+      if (v.lineTint != lineTint || v.wordTint != wordTint) continue;
+      if (!identical(v.inner, line.inner)) {
+        if (!_sameInts(v.inner, line.inner)) continue;
+        v.inner = line.inner;
+      }
+      return v.paragraph ?? paragraph;
+    }
+    final built = builder._buildOn(line, lineTint, wordTint);
+    if (list.length == 2) list.removeAt(0).paragraph?.dispose();
+    list.add(_ContrastParagraph(lineTint, wordTint, line.inner, built));
+    return built ?? paragraph;
+  }
+
+  static bool _sameInts(Uint32List a, Uint32List b) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
+  }
+
+  /// Releases the paragraphs.
+  void dispose() {
+    paragraph.dispose();
+    final list = _contrast;
+    if (list == null) return;
+    for (final v in list) {
+      v.paragraph?.dispose();
+    }
+    _contrast = null;
+  }
+}
+
+final class _ContrastParagraph {
+  new(this.lineTint, this.wordTint, this.inner, this.paragraph);
+
+  final Color? lineTint;
+  final Color? wordTint;
+  // The changed words it was built for (a line can keep its text and
+  // syntax and change its words).
+  Uint32List inner;
+  // Null: nothing needed recolouring, the plain paragraph is drawn.
+  final ui.Paragraph? paragraph;
 }
 
 /// Builds [LineLayout]s with syntax styles from a theme and capture table.
@@ -132,6 +195,7 @@ final class LineLayoutBuilder {
   /// (`captureNames[id]` names capture `id`).
   new(this.theme, List<String> captureNames)
     : _styles = theme.resolveCaptures(captureNames),
+      _colors = [for (final n in captureNames) _captureColor(theme, n)],
       _base = theme.baseTextStyle(),
       _paragraphStyle = theme.paragraphStyle();
 
@@ -140,7 +204,39 @@ final class LineLayoutBuilder {
   final List<ui.TextStyle> _styles;
   final ui.TextStyle _base;
   final ui.ParagraphStyle _paragraphStyle;
+  // Text colour by capture id, as [_styles] draws it.
+  final List<Color> _colors;
   double? _advance;
+  int _contrastBuilds = 0;
+
+  late final TextContrast _contrast = TextContrast(
+    toward: theme.text,
+    minContrast: theme.minTextContrast,
+  );
+  // A colour-only style per recoloured colour, pushed over a capture's.
+  final Map<Color, ui.TextStyle> _colorStyles = {};
+
+  /// Recoloured paragraphs built for [DiffThemeData.minTextContrast]
+  /// (diagnostics).
+  @visibleForTesting
+  int get contrastBuilds => _contrastBuilds;
+
+  /// Colour and fill pairs worked out for [DiffThemeData.minTextContrast]
+  /// (diagnostics).
+  @visibleForTesting
+  int get contrastResolved => _contrast.resolved;
+
+  static Color _captureColor(DiffThemeData theme, String name) {
+    var n = name;
+    while (n.isNotEmpty) {
+      final s = theme.syntax[n];
+      if (s != null) return s.color;
+      final dot = n.lastIndexOf('.');
+      n = dot < 0 ? '' : n.substring(0, dot);
+    }
+    return theme.text;
+  }
+
   double? _textHeight;
 
   /// Width of one column (measured once per font).
@@ -188,6 +284,89 @@ final class LineLayoutBuilder {
       _isMonospaceSafe(expanded),
       line.text.length,
     );
+  }
+
+  // [line] laid out with each run that reads under the least contrast on
+  // its fill recoloured, or null when no run does. A run's fill is
+  // [wordTint] over [lineTint] inside a changed word, [lineTint] outside
+  // it, over the background; a run on no tint is left alone.
+  ui.Paragraph? _buildOn(DiffLine line, Color? lineTint, Color? wordTint) {
+    final bg = theme.background;
+    final lineFill = lineTint == null
+        ? null
+        : compositeFill(bg, lineTint, null);
+    final wordFill = wordTint == null
+        ? null
+        : compositeFill(bg, lineTint, wordTint);
+    final (expanded, columns) = expandTabs(line.text, theme.tabSize);
+    // Changed words' edges in expanded columns, in order.
+    final edges = <int>[];
+    if (wordFill != null) {
+      final inner = line.inner;
+      for (var i = 0; i + 2 < inner.length; i += 3) {
+        if (inner[i + 2] & innerChanged == 0) continue;
+        final len = line.text.length;
+        final start = inner[i] > len ? len : inner[i];
+        final sum = inner[i] + inner[i + 1];
+        final end = sum > len ? len : sum;
+        if (end <= start) continue;
+        edges
+          ..add(columns == null ? start : columns[start])
+          ..add(columns == null ? end : columns[end]);
+      }
+    }
+    // Pieces: start, end, capture (-1: base), recoloured (or null).
+    final pieces = <(int, int, int, Color?)>[];
+    var recoloured = false;
+    void add(int s, int e, int capture) {
+      final color = capture >= 0 && capture < _colors.length
+          ? _colors[capture]
+          : theme.text;
+      var a = s;
+      var w = 0;
+      while (a < e) {
+        while (w < edges.length && edges[w + 1] <= a) {
+          w += 2;
+        }
+        final inWord = w < edges.length && edges[w] <= a;
+        final b = inWord
+            ? (edges[w + 1] < e ? edges[w + 1] : e)
+            : (w < edges.length && edges[w] < e ? edges[w] : e);
+        final fill = inWord ? wordFill : lineFill;
+        Color? c;
+        if (fill != null) {
+          final got = _contrast.colorOn(color, fill);
+          if (got != color) {
+            c = got;
+            recoloured = true;
+          }
+        }
+        pieces.add((a, b, capture, c));
+        a = b;
+      }
+    }
+
+    var cursor = 0;
+    syntaxRuns(line.text.length, line.syntax, columns, (es, ee, capture) {
+      if (es > cursor) add(cursor, es, -1);
+      add(es, ee, capture);
+      cursor = ee;
+    });
+    if (cursor < expanded.length) add(cursor, expanded.length, -1);
+    if (!recoloured) return null;
+    _contrastBuilds++;
+    final b = ui.ParagraphBuilder(_paragraphStyle)..pushStyle(_base);
+    for (final (s, e, capture, c) in pieces) {
+      final styled = capture >= 0 && capture < _styles.length;
+      if (styled) b.pushStyle(_styles[capture]);
+      if (c != null) {
+        b.pushStyle(_colorStyles[c] ??= ui.TextStyle(color: c));
+      }
+      b.addText(expanded.substring(s, e));
+      if (c != null) b.pop();
+      if (styled) b.pop();
+    }
+    return b.build()..layout(const ui.ParagraphConstraints(width: 10000000));
   }
 
   // Printable ASCII and Latin-1 only. Controls (C0, DEL, C1) and the soft

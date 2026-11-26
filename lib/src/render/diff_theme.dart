@@ -60,7 +60,8 @@ final class DiffThemeData {
     this.tabSize = 4,
     this.dividerWidth = 24,
     this.inlayMaxWidth = 820,
-  });
+    this.minTextContrast = 0,
+  }) : assert(minTextContrast >= 0, 'minTextContrast is 0 or more');
 
   /// IntelliJ Light-like defaults.
   factory light() => const DiffThemeData(
@@ -255,6 +256,28 @@ final class DiffThemeData {
 
   /// Widest an inlay gets.
   final double inlayMaxWidth;
+
+  /// The least WCAG contrast ratio (1 to 21) code text keeps against a
+  /// line or word tint; 0 (the default) turns it off and every colour is
+  /// drawn as given.
+  ///
+  /// Above 0, a run of a changed line's text whose colour reads under it
+  /// against the fill it sits on is drawn in its colour mixed toward
+  /// [text], by the least mix (in 8-bit steps) that reaches it, or in
+  /// [text] when even that does not. The fill is the line's tint over
+  /// [background] or, inside a changed word, the word's tint over that,
+  /// both composited when translucent; a run that crosses a word's edge
+  /// is split there. The unified view's fills ([unifiedDeletedLine],
+  /// [unifiedDeletedWord]) count there. Text on the plain [background] is
+  /// never changed, however it reads: those are the theme's own colours.
+  /// The text selection is not taken into account, as it moves under the
+  /// pointer. A terminal's minimum contrast setting works this way; 3 or
+  /// 4.5 (WCAG's large and normal text) are common values.
+  ///
+  /// Each colour and fill is worked out once, and a line's recoloured
+  /// paragraph is built the first time it is painted on a fill and kept
+  /// with its layout.
+  final double minTextContrast;
 
   /// Line height snapped to physical pixels:
   /// `round(fontSize × factor × dpr) / dpr`.
