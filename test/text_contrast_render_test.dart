@@ -121,19 +121,21 @@ final class _DimDiff {
   final MemoryLineSource source;
 }
 
-/// One modified line a side, [oldText] / [newText], each a comment, with
-/// the changed words [oldInner] / [newInner] (`start, length` pairs).
-(DiffDocument, MemoryLineSource) oneModifiedLine(
+/// One line a side, [oldText] / [newText], each a comment, with the
+/// changed words [oldInner] / [newInner] (`start, length` pairs): a
+/// modified line, or with [unchanged] an unchanged one.
+(DiffDocument, MemoryLineSource) oneLine(
   String oldText,
   String newText, {
   required List<int> oldInner,
   required List<int> newInner,
+  bool unchanged = false,
 }) {
   DiffLine line(String text, List<int> inner) => DiffLine(
     line: 0,
     text: text,
-    kind: LineKind.modified,
-    block: 0,
+    kind: unchanged ? LineKind.unchanged : LineKind.modified,
+    block: unchanged ? -1 : 0,
     syntax: Uint32List.fromList([0, text.length, 1]),
     inner: Uint32List.fromList([
       for (var i = 0; i + 1 < inner.length; i += 2) ...[
@@ -147,15 +149,19 @@ final class _DimDiff {
     DiffDocument(
       oldLineCount: 1,
       newLineCount: 1,
-      blocks: const [
-        DiffBlock(
-          index: 0,
-          kind: BlockKind.modified,
-          old: ModelSpan(0, 1),
-          neu: ModelSpan(0, 1),
-        ),
+      blocks: [
+        if (!unchanged)
+          const DiffBlock(
+            index: 0,
+            kind: BlockKind.modified,
+            old: ModelSpan(0, 1),
+            neu: ModelSpan(0, 1),
+          ),
       ],
-      gaps: const [],
+      gaps: [
+        if (unchanged)
+          const DiffGap(index: 0, old: ModelSpan(0, 1), neu: ModelSpan(0, 1)),
+      ],
       path: 'notes.txt',
     ),
     MemoryLineSource(
@@ -365,10 +371,10 @@ void main() {
     });
   });
 
-  group('a changed word\'s edge inside a surrogate pair', () {
+  group('a word edge inside a surrogate pair', () {
     // An emoji whose two code units a character diff split: the old
     // side's word is its low half, the new side's its high half.
-    final diff = oneModifiedLine(
+    final diff = oneLine(
       '// \u{1F600} done',
       '// \u{1F601} done',
       oldInner: [4, 1],
@@ -411,6 +417,59 @@ void main() {
         expect(p.width, greaterThan(0), reason: '$inner');
         layout.dispose();
       }
+    });
+  });
+
+  group('changed words', () {
+    testWidgets('on an unchanged row only the words are recoloured', (
+      tester,
+    ) async {
+      // A row with no line tint whose inner spans still paint, in the
+      // modified word tint: the text outside them is on the background.
+      final diff = oneLine(
+        '// keep note',
+        '// keep note',
+        oldInner: [3, 4],
+        newInner: [3, 4],
+        unchanged: true,
+      );
+      for (final unified in [false, true]) {
+        final c = await pumpDim(tester, on, unified: unified, diff: diff);
+        final inWord = expected(on, null, on.modifiedWord);
+        expect(inWord, isNot(_comment));
+        expect(await glyphAt(tester, c, row: 0, col: 4), inWord);
+        expect(await glyphAt(tester, c, row: 0, col: 0), _comment);
+        expect(await glyphAt(tester, c, row: 0, col: 9), _comment);
+      }
+    });
+
+    test('new words on the same text get a new paragraph', () {
+      final b = LineLayoutBuilder(on, _captures);
+      DiffLine line(List<int> inner) => DiffLine(
+        line: 0,
+        text: '// one two',
+        kind: LineKind.modified,
+        block: 0,
+        syntax: Uint32List.fromList([0, 10, 1]),
+        inner: Uint32List.fromList(inner),
+      );
+      final first = line([3, 3, innerChanged]);
+      final second = line([7, 3, innerChanged]);
+      expect(first.sameLayoutAs(second), isTrue);
+      final layout = b.build(first);
+      final a = layout.paragraphOn(b, first, on.modifiedLine, on.modifiedWord);
+      expect(b.contrastBuilds, 1);
+      // The same words in a new list: kept.
+      final again = line([3, 3, innerChanged]);
+      expect(
+        layout.paragraphOn(b, again, on.modifiedLine, on.modifiedWord),
+        same(a),
+      );
+      expect(b.contrastBuilds, 1);
+      final c = layout.paragraphOn(b, second, on.modifiedLine, on.modifiedWord);
+      expect(c, isNot(same(a)));
+      expect(b.contrastBuilds, 2);
+      layout.dispose();
     });
   });
 
