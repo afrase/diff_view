@@ -121,10 +121,55 @@ final class _DimDiff {
   final MemoryLineSource source;
 }
 
+/// One modified line a side, [oldText] / [newText], each a comment, with
+/// the changed words [oldInner] / [newInner] (`start, length` pairs).
+(DiffDocument, MemoryLineSource) oneModifiedLine(
+  String oldText,
+  String newText, {
+  required List<int> oldInner,
+  required List<int> newInner,
+}) {
+  DiffLine line(String text, List<int> inner) => DiffLine(
+    line: 0,
+    text: text,
+    kind: LineKind.modified,
+    block: 0,
+    syntax: Uint32List.fromList([0, text.length, 1]),
+    inner: Uint32List.fromList([
+      for (var i = 0; i + 1 < inner.length; i += 2) ...[
+        inner[i],
+        inner[i + 1],
+        innerChanged,
+      ],
+    ]),
+  );
+  return (
+    DiffDocument(
+      oldLineCount: 1,
+      newLineCount: 1,
+      blocks: const [
+        DiffBlock(
+          index: 0,
+          kind: BlockKind.modified,
+          old: ModelSpan(0, 1),
+          neu: ModelSpan(0, 1),
+        ),
+      ],
+      gaps: const [],
+      path: 'notes.txt',
+    ),
+    MemoryLineSource(
+      old: [line(oldText, oldInner)],
+      neu: [line(newText, newInner)],
+    ),
+  );
+}
+
 Future<DiffViewController> pumpDim(
   WidgetTester tester,
   DiffThemeData theme, {
   required bool unified,
+  (DiffDocument, MemoryLineSource)? diff,
 }) async {
   tester.view
     ..physicalSize = const Size(640, 160)
@@ -132,8 +177,8 @@ Future<DiffViewController> pumpDim(
   addTearDown(tester.view.reset);
   final d = _DimDiff();
   final c = DiffViewController(
-    document: d.document,
-    lines: d.source,
+    document: diff?.$1 ?? d.document,
+    lines: diff?.$2 ?? d.source,
     theme: theme,
     captureNames: _captures,
     devicePixelRatio: 1,
@@ -317,6 +362,55 @@ void main() {
         await glyphAt(tester, c, row: 3, col: 9),
         expected(on, on.insertedLine, null),
       );
+    });
+  });
+
+  group('a changed word\'s edge inside a surrogate pair', () {
+    // An emoji whose two code units a character diff split: the old
+    // side's word is its low half, the new side's its high half.
+    final diff = oneModifiedLine(
+      '// \u{1F600} done',
+      '// \u{1F601} done',
+      oldInner: [4, 1],
+      newInner: [3, 1],
+    );
+    for (final unified in [false, true]) {
+      testWidgets(unified ? 'unified' : 'side by side', (tester) async {
+        final c = await pumpDim(tester, on, unified: unified, diff: diff);
+        expect(tester.takeException(), isNull);
+        // The comment was recoloured, the emoji kept whole.
+        expect(c.resources.layouts.contrastBuilds, greaterThan(0));
+        for (final ro in tester.renderObjectList<RenderDiffPane>(
+          find.byType(DiffPaneViewport),
+        )) {
+          ro.markNeedsPaint();
+        }
+        await tester.pump();
+        expect(tester.takeException(), isNull);
+      });
+    }
+
+    test('a paragraph is built with the pair whole', () {
+      final b = LineLayoutBuilder(on, _captures);
+      for (final inner in [
+        [1, 1],
+        [2, 1],
+        [0, 2],
+        [2, 2],
+      ]) {
+        final line = DiffLine(
+          line: 0,
+          text: 'a\u{1F600}b',
+          kind: LineKind.modified,
+          block: 0,
+          syntax: Uint32List.fromList([0, 4, 1]),
+          inner: Uint32List.fromList([inner[0], inner[1], innerChanged]),
+        );
+        final layout = b.build(line);
+        final p = layout.paragraphOn(b, line, on.modifiedLine, on.modifiedWord);
+        expect(p.width, greaterThan(0), reason: '$inner');
+        layout.dispose();
+      }
     });
   });
 

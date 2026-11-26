@@ -305,10 +305,13 @@ final class LineLayoutBuilder {
       final inner = line.inner;
       for (var i = 0; i + 2 < inner.length; i += 3) {
         if (inner[i + 2] & innerChanged == 0) continue;
-        final len = line.text.length;
-        final start = inner[i] > len ? len : inner[i];
+        final text = line.text;
+        final len = text.length;
+        // An edge between the two halves of a surrogate pair moves to the
+        // pair's edge, outward: text is split only between code points.
+        final start = _codePointStart(text, inner[i] > len ? len : inner[i]);
         final sum = inner[i] + inner[i + 1];
-        final end = sum > len ? len : sum;
+        final end = _codePointEnd(text, sum > len ? len : sum);
         if (end <= start) continue;
         edges
           ..add(columns == null ? start : columns[start])
@@ -368,6 +371,21 @@ final class LineLayoutBuilder {
     }
     return b.build()..layout(const ui.ParagraphConstraints(width: 10000000));
   }
+
+  // [i], or the start of the surrogate pair [i] is inside.
+  static int _codePointStart(String text, int i) =>
+      _insidePair(text, i) ? i - 1 : i;
+
+  // [i], or the end of the surrogate pair [i] is inside.
+  static int _codePointEnd(String text, int i) =>
+      _insidePair(text, i) ? i + 1 : i;
+
+  // Whether offset [i] falls between a high and a low surrogate.
+  static bool _insidePair(String text, int i) =>
+      i > 0 &&
+      i < text.length &&
+      text.codeUnitAt(i - 1) & 0xFC00 == 0xD800 &&
+      text.codeUnitAt(i) & 0xFC00 == 0xDC00;
 
   // Printable ASCII and Latin-1 only. Controls (C0, DEL, C1) and the soft
   // hyphen U+00AD are excluded: the paragraph may draw them zero-width (a
