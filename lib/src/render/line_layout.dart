@@ -497,7 +497,8 @@ final class ParagraphCache {
   /// Capacity, in paragraphs: one per layout, plus the recoloured ones a
   /// layout keeps for [DiffThemeData.minTextContrast] (at most two). With
   /// the contrast off it is the number of layouts. The newest layout is
-  /// always kept, so a capacity under three can be passed by one.
+  /// always kept, with its up to three paragraphs, even over a smaller
+  /// capacity.
   final int maxEntries;
 
   final LinkedHashMap<int, _CacheEntry> _map = LinkedHashMap();
