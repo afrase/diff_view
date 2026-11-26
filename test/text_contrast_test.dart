@@ -209,6 +209,30 @@ void main() {
     });
   });
 
+  group('a translucent background', () {
+    // What shows under a see-through pane is unknown, so its background
+    // is taken as opaque, its alpha dropped.
+    final seeThrough = background.withValues(alpha: 0.6);
+    const line = Color(0x80305A66);
+
+    test('is taken as opaque under the tints', () {
+      expect(
+        compositeFill(seeThrough, line, addedWord.withValues(alpha: 0.5)),
+        compositeFill(background, line, addedWord.withValues(alpha: 0.5)),
+      );
+      expect(compositeFill(seeThrough, null, null), background);
+    });
+
+    test("is taken as opaque for a colour's own contrast", () {
+      final faint = comment.withValues(alpha: 0.7);
+      final fill = compositeFill(background, line, null);
+      expect(
+        readableOn(faint, fill, background: seeThrough, minContrast: 3),
+        readableOn(faint, fill, background: background, minContrast: 3),
+      );
+    });
+  });
+
   group('TextContrast', () {
     test('works out each colour and fill once', () {
       final tc = TextContrast(background: background, minContrast: 3);

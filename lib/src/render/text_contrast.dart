@@ -12,13 +12,16 @@ double contrastRatio(Color a, Color b) {
 
 /// The opaque fill text sits on: [lineTint], then [wordTint], each
 /// composited over the one below, over [background]. A null tint is not
-/// painted.
+/// painted. A translucent [background] is taken as opaque, its alpha
+/// dropped: what shows through it is not known here.
 Color compositeFill(Color background, Color? lineTint, Color? wordTint) {
-  var fill = background;
+  var fill = _opaque(background);
   if (lineTint != null) fill = Color.alphaBlend(lineTint, fill);
   if (wordTint != null) fill = Color.alphaBlend(wordTint, fill);
-  return fill.a == 1 ? fill : fill.withValues(alpha: 1);
+  return fill;
 }
+
+Color _opaque(Color c) => c.a == 1 ? c : c.withValues(alpha: 1);
 
 /// [color] as text on the opaque [fill], keeping the contrast it has on
 /// the pane's [background], up to [minContrast].
@@ -33,7 +36,7 @@ Color compositeFill(Color background, Color? lineTint, Color? wordTint) {
 /// end. When no step reaches it, whichever of [color], white and black
 /// reads best on [fill], so the result never reads worse than [color].
 /// A translucent [color] is judged as it shows on [fill] and on
-/// [background].
+/// [background]; a translucent [background] is taken as opaque.
 Color readableOn(
   Color color,
   Color fill, {
@@ -41,7 +44,7 @@ Color readableOn(
   required double minContrast,
 }) {
   if (minContrast <= 0) return color;
-  final own = _shownContrast(color, background);
+  final own = _shownContrast(color, _opaque(background));
   final target = own < minContrast ? own : minContrast;
   final start = _shownContrast(color, fill);
   if (start >= target) return color;
