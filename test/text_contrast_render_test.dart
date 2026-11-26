@@ -47,6 +47,45 @@ DiffThemeData dimCommentTheme({double minTextContrast = 0}) => DiffThemeData(
   minTextContrast: minTextContrast,
 );
 
+// The same made-up theme, light: the comment reads about 2.6:1 on white
+// and under 2 on the word tints; the keyword is a saturated purple.
+const _lightComment = Color(0xFF969DB3);
+const _lightKeyword = Color(0xFF9C4FC2);
+
+DiffThemeData lightDimCommentTheme({double minTextContrast = 0}) =>
+    DiffThemeData(
+      brightness: ui.Brightness.light,
+      background: const Color(0xFFFFFFFF),
+      text: const Color(0xFF2A2C36),
+      gutterBackground: const Color(0xFFF6F7F9),
+      gutterText: const Color(0xFFA0A4B2),
+      gutterTextChanged: const Color(0xFF5C6070),
+      insertedLine: const Color(0xFFDDF2E2),
+      insertedWord: const Color(0xFFA9DDB6),
+      deletedLine: const Color(0xFFFBE2E5),
+      deletedWord: const Color(0xFFF1B5BE),
+      modifiedLine: const Color(0xFFE2EBFA),
+      modifiedWord: const Color(0xFFB3C9F3),
+      unifiedDeletedLine: const Color(0x66F2A8B2),
+      unifiedDeletedWord: const Color(0x99E98896),
+      ribbonInserted: const Color(0xFFDDF2E2),
+      ribbonDeleted: const Color(0xFFFBE2E5),
+      ribbonModified: const Color(0xFFE2EBFA),
+      dividerBackground: const Color(0xFFF6F7F9),
+      selection: const Color(0x553D7EFF),
+      selectionOverCap: const Color(0x55E8A33D),
+      textSelection: const Color(0xFFCCDAF6),
+      foldPlaceholderBackground: const Color(0xFFEEF0F4),
+      foldPlaceholderText: const Color(0xFF6F7484),
+      loadingBar: const Color(0xFFE6E8EB),
+      hoverAffordance: const Color(0xFF3574F0),
+      syntax: const {
+        'comment': SyntaxStyle(_lightComment),
+        'keyword': SyntaxStyle(_lightKeyword),
+      },
+      minTextContrast: minTextContrast,
+    );
+
 const _captures = ['', 'comment', 'keyword'];
 
 /// The rows of [_DimDiff], side by side:
@@ -480,6 +519,44 @@ void main() {
     });
   });
 
+  group('light', () {
+    final light = lightDimCommentTheme(minTextContrast: 3);
+
+    test('the made-up light comments are dim on the tints', () {
+      expect(
+        contrastRatio(_lightComment, light.background),
+        inInclusiveRange(2.4, 2.8),
+      );
+      for (final fill in [light.insertedWord, light.modifiedWord]) {
+        expect(contrastRatio(_lightComment, fill), lessThan(2));
+      }
+    });
+
+    testWidgets('a dim comment on a changed word gets darker, its hue '
+        'kept, and reads as it does on the background', (tester) async {
+      final c = await pumpDim(tester, light, unified: false);
+      expect(await glyphAt(tester, c, pane: 1, row: 0, col: 3), _lightComment);
+      final fill = compositeFill(
+        light.background,
+        light.modifiedLine,
+        light.modifiedWord,
+      );
+      final onWord = await glyphAt(tester, c, pane: 1, row: 1, col: 3);
+      expect(
+        onWord.computeLuminance(),
+        lessThan(_lightComment.computeLuminance()),
+      );
+      expect(
+        contrastRatio(onWord, fill),
+        greaterThanOrEqualTo(contrastRatio(_lightComment, light.background)),
+      );
+      final got = HSLColor.fromColor(onWord);
+      final want = HSLColor.fromColor(_lightComment);
+      expect(got.hue, closeTo(want.hue, 3));
+      expect(got.saturation, closeTo(want.saturation, 0.04));
+    });
+  });
+
   group('goldens', () {
     testWidgets('side by side, dim comments at a least contrast', (
       tester,
@@ -496,6 +573,28 @@ void main() {
       await expectLater(
         find.byType(UnifiedDiff),
         matchesGoldenFile('goldens/unified_min_contrast.png'),
+      );
+    });
+
+    final light = lightDimCommentTheme(minTextContrast: 3);
+
+    testWidgets('side by side, light, dim comments at a least contrast', (
+      tester,
+    ) async {
+      await pumpDim(tester, light, unified: false);
+      await expectLater(
+        find.byType(SideBySideDiff),
+        matchesGoldenFile('goldens/side_by_side_min_contrast_light.png'),
+      );
+    });
+
+    testWidgets('unified, light, dim comments at a least contrast', (
+      tester,
+    ) async {
+      await pumpDim(tester, light, unified: true);
+      await expectLater(
+        find.byType(UnifiedDiff),
+        matchesGoldenFile('goldens/unified_min_contrast_light.png'),
       );
     });
   });
