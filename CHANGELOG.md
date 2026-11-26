@@ -1,6 +1,7 @@
 ## 0.4.0
 
-- `DiffThemeData.minTextContrast` keeps a least WCAG contrast for code text on a line or word tint: a run that reads under it on its fill is drawn in its colour mixed toward `text`, by the least mix that reaches it (or in `text`). Text on the plain background, and runs that already read, keep their colours; the text selection isn't counted. 0, the default, turns it off and draws everything as before.
+- `DiffThemeData.minTextContrast` keeps code readable on line and word tints. A run on a tint keeps the WCAG contrast its colour has on the plain background, up to this floor: if it reads less on its tint, only its lightness changes, hue and saturation kept, by the least change that gets there (away from the tint first, then the other way), and never to a colour that reads worse. Text on the plain background, the gutter, the line-selection band, fold labels and the text selection are left alone. 0, the default, turns it off and draws everything as before. On, a recoloured line keeps one more paragraph per view, counted against the line cache, and takes about twice as long to lay out the first time it shows.
+- `DiffViewController.maxCachedLines` (and `ParagraphCache.maxEntries`) count paragraphs: one per line, plus the recoloured ones. With the contrast off that is the number of lines, as before.
 
 ## 0.3.0
 

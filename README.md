@@ -72,7 +72,7 @@ Pass `syntax:` to `TextDiff.compute`. It returns `(start, length, captureId)` tr
 
 ## Text on a tint
 
-A theme's dim colours, such as a comment, can read on its background and get lost on a changed line's or changed word's tint. Set `minTextContrast` on the theme to keep a least WCAG contrast there:
+A theme's dim colours, such as a comment, can read on its background and get lost on a changed line's or changed word's tint. Set `minTextContrast` on the theme to keep them readable there:
 
 ```dart
 final theme = DiffThemeData(
@@ -81,9 +81,9 @@ final theme = DiffThemeData(
 );
 ```
 
-- A run of text that reads under it on its fill (the line tint over the background, or inside a changed word the word tint over that) is drawn in its colour mixed toward the theme's `text`, just far enough to reach it; if even `text` doesn't, in `text`.
-- Text on the plain background keeps its colour, however it reads, and so does every run that already reads. The text selection isn't counted, as it moves under the pointer.
-- It is 0, off, by default. On, each colour is worked out once per fill and a line's recoloured paragraph is built once and kept, so scrolling costs about the same.
+- **What it does.** Code on a tint keeps the contrast its colour has on the plain background, up to `minTextContrast` (a WCAG ratio). A colour that already reads that well on its tint is drawn as it is. One that doesn't gets lighter or darker, its hue and saturation kept, by just enough: away from the tint first, the other way if that can't get there. A green string stays green, and a theme that is low in contrast by design stays so. Nothing is ever drawn harder to read than its own colour.
+- **What it leaves alone.** Text on the plain background, the gutter's line numbers and change markers, the gutter's line-selection band, fold labels and the text selection. A translucent pane background is taken as opaque.
+- **What it costs.** It is 0, off, by default, and off costs nothing. On, a changed line that needs it gets a recoloured paragraph the first time it shows, kept and counted against the line cache, so fewer lines stay cached. Such a line takes about twice as long to lay out, so in the worst case (every row changed, every token dim, a fast fling) new rows take about twice as long to draw. Repaints and scrolling back cost nothing extra.
 
 ## Your own diff or backend
 

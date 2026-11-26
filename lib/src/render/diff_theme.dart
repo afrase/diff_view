@@ -257,26 +257,42 @@ final class DiffThemeData {
   /// Widest an inlay gets.
   final double inlayMaxWidth;
 
-  /// The least WCAG contrast ratio (1 to 21) code text keeps against a
-  /// line or word tint; 0 (the default) turns it off and every colour is
-  /// drawn as given.
+  /// A floor, as a WCAG contrast ratio (1 to 21), for keeping code text
+  /// readable on a line or word tint; 0 (the default) turns it off and
+  /// every colour is drawn as given.
   ///
-  /// Above 0, a run of a changed line's text whose colour reads under it
-  /// against the fill it sits on is drawn in its colour mixed toward
-  /// [text], by the least mix (in 8-bit steps) that reaches it, or in
-  /// [text] when even that does not. The fill is the line's tint over
-  /// [background] or, inside a changed word, the word's tint over that,
-  /// both composited when translucent; a run that crosses a word's edge
-  /// is split there. The unified view's fills ([unifiedDeletedLine],
-  /// [unifiedDeletedWord]) count there. Text on the plain [background] is
-  /// never changed, however it reads: those are the theme's own colours.
-  /// The text selection is not taken into account, as it moves under the
-  /// pointer. A terminal's minimum contrast setting works this way; 3 or
+  /// Above 0, a run of code on a tint keeps the contrast its colour has on
+  /// [background], up to this floor. Its target is the lesser of the two,
+  /// so a highlight never asks more of a colour than the theme gives it on
+  /// the plain background: a dim comment on a changed word reads as the
+  /// theme's comments read everywhere. A run that reads its target on its
+  /// fill keeps its colour. One that doesn't is drawn with only its
+  /// lightness changed, hue and saturation kept, by the least change that
+  /// reaches the target: first away from the fill on the side the colour
+  /// is on, then toward the other end. If neither white nor black reaches
+  /// it, the best of the colour, white and black, so a run never reads
+  /// worse than its own colour did. Nothing is mixed toward [text].
+  ///
+  /// The fill is the line's tint over [background] or, inside a changed
+  /// word, the word's tint over that, composited when translucent; a run
+  /// that crosses a word's edge is split there. The unified view's fills
+  /// ([unifiedDeletedLine], [unifiedDeletedWord]) count there. A
+  /// translucent [background] is taken as opaque, as what shows through
+  /// it is not known. Every colour a run can have is treated so: the
+  /// syntax colours, and [text] for runs with no syntax colour.
+  ///
+  /// Left alone: text on the plain [background], the gutter's line
+  /// numbers and change markers, the gutter line-selection band, fold
+  /// labels, and the text selection, which moves under the pointer. 3 or
   /// 4.5 (WCAG's large and normal text) are common values.
   ///
-  /// Each colour and fill is worked out once, and a line's recoloured
-  /// paragraph is built the first time it is painted on a fill and kept
-  /// with its layout.
+  /// Cost: off, nothing. On, each colour and fill is worked out once. A
+  /// changed line with a run that needs it gets a recoloured paragraph
+  /// the first time it is painted, kept with its layout (one per view
+  /// showing it), and each counts against the line cache's budget, so
+  /// fewer lines stay cached. Laying out such a line costs about twice as
+  /// much: when every row is changed and every token dim, a fling's new
+  /// rows take about twice as long to draw. Repaints build nothing.
   final double minTextContrast;
 
   /// Line height snapped to physical pixels:
